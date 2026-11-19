@@ -54,6 +54,11 @@ testpaths = ["tests"]
 pythonpath = ["."]
 
 [tool.coverage.run]
+# sysmon is the coverage core used by Python 3.14+ by default. On 3.13 the default
+# settrace cores lose statements after a suspended coroutine resumes
+# (coveragepy/coveragepy#2245), which under-reports async handlers. Drop this line
+# once the upstream fix is released and the pinned coverage includes it.
+core = "sysmon"
 omit = ["app/__main__.py"]
 
 [tool.coverage.report]

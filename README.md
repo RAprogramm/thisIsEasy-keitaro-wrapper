@@ -107,18 +107,20 @@ and statistics live in Keitaro and are never duplicated.
   in Keitaro; run it on a trusted network or behind a reverse proxy that adds auth.
 - The editor targets the first `landings` stream of a campaign unless `stream_id` is
   given; campaigns with several offer streams need the explicit ID.
-- Statistics are all-time only; there is no date-range picker.
-- The wrapper is synchronous by design (internal tool scale); one Keitaro call per
-  request, 30 s timeout, upstream failures map to 502.
+- Statistics without `from`/`to` describe the whole history of a campaign.
+- All I/O is async (a persistent `httpx.AsyncClient` and the SQLAlchemy asyncio engine),
+  but the calls inside one request are awaited in sequence, not in parallel; 30 s
+  timeout per call, upstream failures map to 502.
 
 ## Development
 
 ```bash
 uv sync
-uv run pytest --cov=app --cov-fail-under=100   # 77 tests, ~1 s
-uv run ruff check . && uv run ruff format --check .
-uv run mypy app tests alembic
-uv run alembic upgrade head && uv run alembic check   # migrations match the models
+make test          # pytest with coverage, must stay at 100%
+make lint          # ruff check + ruff format --check + mypy
+make migrate       # alembic upgrade head
+uv run alembic check                       # migrations match the models
+make requirements  # re-export requirements.txt from uv.lock
 ```
 
 Tests never touch the Keitaro network: HTTP is mocked with `respx`, endpoints run against
@@ -130,6 +132,11 @@ migrations to a fresh database and fails on any drift between them and the model
 `db/schema.sql` and `db/queries.sql` mirror the ORM schema and the queries the app issues;
 CI analyzes them with [sql-query-analyzer](https://github.com/RAprogramm/sql-query-analyzer).
 CI also re-exports `requirements.txt` from `uv.lock` and fails if the two have drifted.
+
+CI runs the suite on Python 3.13, 3.14 and 3.15. Coverage is pinned to the `sysmon` core
+in `[tool.coverage.run]`: `sysmon` is the default on Python 3.14+, while the `settrace`
+cores still used on 3.13 report lines executed after an `await` as missing
+([coveragepy#2245](https://github.com/coveragepy/coveragepy/issues/2245)).
 
 ## AI usage
 
