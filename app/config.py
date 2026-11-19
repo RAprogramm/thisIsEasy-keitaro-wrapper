@@ -1,7 +1,11 @@
+"""Environment-driven application settings loaded from .env."""
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    """Application configuration sourced from environment variables and .env."""
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     keitaro_url: str = "https://tlgk.host"
@@ -12,6 +16,8 @@ class Settings(BaseSettings):
     campaign_prefix: str = "test_rozanov_"
     # Where the first stream (geo -> Google) redirects to
     google_url: str = "https://www.google.com"
+    # Lifetime of the cached /api/dictionaries response, in seconds.
+    dictionaries_ttl: float = 60.0
 
 
 settings = Settings()

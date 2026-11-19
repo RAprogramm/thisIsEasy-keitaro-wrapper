@@ -87,6 +87,8 @@ class OfferView(BaseModel):
     name: str
     share: int | float | str | None
     state: str | None
+    status: str = "active"
+    pinned: bool = False
     stats: OfferStats
 
 
@@ -97,6 +99,7 @@ class StreamView(BaseModel):
     name: str | None
     schema_: str | None = Field(default=None, alias="schema")
     offers: list[OfferView]
+    dirty: bool = False
 
 
 class CampaignView(BaseModel):

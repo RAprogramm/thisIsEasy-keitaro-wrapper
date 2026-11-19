@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..cache import TtlCache
 from ..config import settings
 from ..db import get_db
 from ..keitaro import KeitaroClient, get_client
@@ -26,6 +27,8 @@ router = APIRouter(prefix="/api", tags=["creator"])
 
 DbSession = Annotated[Session, Depends(get_db)]
 Tracker = Annotated[KeitaroClient, Depends(get_client)]
+
+_dictionaries_cache: TtlCache[Dictionaries] = TtlCache(ttl=settings.dictionaries_ttl)
 
 
 def _pick(items: list[dict[str, Any]], wanted: int | None, label: str) -> int:
@@ -89,12 +92,16 @@ def _offer_stream_payload(campaign_id: int, offer_id: int) -> dict[str, Any]:
 @router.get("/dictionaries")
 def dictionaries(k: Tracker) -> Dictionaries:
     """Dictionaries for the form: domains, groups, sources, offers."""
-    return Dictionaries(
-        domains=[DictItem(id=d["id"], name=d["name"]) for d in k.domains()],
-        groups=[DictItem(id=g["id"], name=g["name"]) for g in k.groups()],
-        sources=[DictItem(id=s["id"], name=s["name"]) for s in k.traffic_sources()],
-        offers=[DictItem(id=o["id"], name=o["name"]) for o in k.offers()],
-    )
+
+    def fetch() -> Dictionaries:
+        return Dictionaries(
+            domains=[DictItem(id=d["id"], name=d["name"]) for d in k.domains()],
+            groups=[DictItem(id=g["id"], name=g["name"]) for g in k.groups()],
+            sources=[DictItem(id=s["id"], name=s["name"]) for s in k.traffic_sources()],
+            offers=[DictItem(id=o["id"], name=o["name"]) for o in k.offers()],
+        )
+
+    return _dictionaries_cache.get_or_set(fetch)
 
 
 @router.post("/campaigns", status_code=201)

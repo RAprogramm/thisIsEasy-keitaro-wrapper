@@ -1,3 +1,5 @@
+"""Engine, session factory, and request-scoped session dependency."""
+
 from collections.abc import Generator
 
 from sqlalchemy import create_engine

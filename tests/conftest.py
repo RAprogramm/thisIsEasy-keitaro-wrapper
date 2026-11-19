@@ -15,9 +15,11 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app import models  # noqa: F401  (registers the tables on Base)
+from app.cache import TtlCache
 from app.db import Base, get_db
 from app.keitaro import get_client
 from app.main import app
+from app.routers import creator as creator_router
 
 TEST_DB_URL = os.environ["TEST_DATABASE_URL"]
 
@@ -39,6 +41,12 @@ def _clean_tables() -> Iterator[None]:
     with engine.begin() as conn:
         for table in reversed(Base.metadata.sorted_tables):
             conn.execute(table.delete())
+
+
+@pytest.fixture(autouse=True)
+def _reset_dictionaries_cache() -> Iterator[None]:
+    creator_router._dictionaries_cache = TtlCache(ttl=60.0)
+    yield
 
 
 @pytest.fixture

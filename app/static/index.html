@@ -1,146 +1,121 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Keitaro wrapper</title>
 <style>
-  :root { --bg:#f6f7f9; --card:#fff; --text:#1c2230; --muted:#6b7280; --accent:#2563eb; --danger:#dc2626; --ok:#16a34a; --border:#e5e7eb; }
-  @media (prefers-color-scheme: dark) {
-    :root { --bg:#12151c; --card:#1b2030; --text:#e6e9f0; --muted:#98a2b3; --border:#2a3144; }
-  }
-  * { box-sizing: border-box; }
-  body { margin:0; font:15px/1.5 system-ui,sans-serif; background:var(--bg); color:var(--text); }
-  main { max-width:960px; margin:0 auto; padding:24px 16px 64px; }
-  h1 { font-size:20px; margin:0 0 16px; }
-  nav { display:flex; gap:8px; margin-bottom:16px; }
-  nav button { padding:8px 16px; border:1px solid var(--border); background:var(--card); color:var(--text); border-radius:8px; cursor:pointer; }
-  nav button.active { background:var(--accent); color:#fff; border-color:var(--accent); }
-  .card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:20px; margin-bottom:16px; }
-  label { display:block; font-size:13px; color:var(--muted); margin:12px 0 4px; }
-  input, select { width:100%; padding:9px 10px; border:1px solid var(--border); border-radius:8px; background:var(--bg); color:var(--text); font:inherit; }
-  .row { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px; }
-  button.primary { margin-top:16px; padding:10px 18px; background:var(--accent); color:#fff; border:0; border-radius:8px; cursor:pointer; font:inherit; }
-  button.danger { padding:5px 10px; background:transparent; color:var(--danger); border:1px solid var(--danger); border-radius:6px; cursor:pointer; }
-  button:disabled { opacity:.5; cursor:wait; }
-  table { width:100%; border-collapse:collapse; font-size:14px; }
-  th, td { text-align:right; padding:8px 6px; border-bottom:1px solid var(--border); }
-  th:first-child, td:first-child { text-align:left; }
-  th { color:var(--muted); font-weight:500; }
-  .msg { margin-top:12px; padding:10px 12px; border-radius:8px; font-size:14px; }
-  .msg.ok { background:rgba(22,163,74,.12); color:var(--ok); }
-  .msg.err { background:rgba(220,38,38,.12); color:var(--danger); }
-  .hidden { display:none; }
-  .muted { color:var(--muted); }
-  h2 { font-size:16px; margin:0 0 8px; }
+  body { font-family: system-ui, sans-serif; max-width: 1100px; margin: 2rem auto; padding: 0 1rem; color: #222; }
+  h1 { margin-bottom: 0.5rem; }
+  nav { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+  nav button { padding: 0.4rem 0.8rem; border: 1px solid #ccc; background: #f7f7f7; cursor: pointer; border-radius: 4px; }
+  nav button.active { background: #222; color: #fff; border-color: #222; }
+  .card { border: 1px solid #ddd; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; background: #fff; }
+  .card.dirty { border-color: #e6a700; background: #fffbe6; }
+  .row { display: flex; gap: 1rem; flex-wrap: wrap; align-items: end; }
+  .row > div { flex: 1 1 200px; }
+  label { display: block; font-size: 0.85rem; color: #555; margin-bottom: 0.25rem; }
+  input, select { width: 100%; padding: 0.4rem; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+  button.primary { background: #222; color: #fff; border: none; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; }
+  button.danger { background: #c0392b; color: #fff; border: none; padding: 0.3rem 0.6rem; border-radius: 4px; cursor: pointer; }
+  button.restore { background: #27ae60; color: #fff; border: none; padding: 0.3rem 0.6rem; border-radius: 4px; cursor: pointer; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; }
+  th, td { border-bottom: 1px solid #eee; padding: 0.4rem; text-align: left; font-size: 0.9rem; }
+  th { color: #555; }
+  .muted { color: #888; font-size: 0.85rem; }
+  .msg { padding: 0.5rem 0.75rem; border-radius: 4px; margin-top: 0.5rem; }
+  .msg.ok { background: #e8f5e9; color: #1b5e20; }
+  .msg.err { background: #fdecea; color: #b71c1c; }
+  .hidden { display: none; }
+  tr.removed { background: #f2f2f2; color: #999; }
+  tr.removed td { text-decoration: line-through; }
+  .badge { display: inline-block; padding: 0.1rem 0.4rem; border-radius: 3px; font-size: 0.75rem; }
+  .badge.pending { background: #fff3cd; color: #856404; }
+  .badge.removed { background: #e2e3e5; color: #383d41; }
+  .actions { display: flex; gap: 0.4rem; align-items: center; }
 </style>
 </head>
 <body>
-<main>
-  <h1>Keitaro wrapper</h1>
-  <nav>
-    <button id="tab-create" class="active">Создать кампанию</button>
-    <button id="tab-edit">Редактор кампании</button>
-  </nav>
+<h1>Keitaro wrapper</h1>
+<nav>
+  <button id="tab-create" class="active">Создать кампанию</button>
+  <button id="tab-edit">Редактор кампании</button>
+</nav>
 
-  <section id="view-create" class="card">
-    <form id="create-form">
-      <div class="row">
-        <div><label>Название (префикс добавится сам)</label><input id="c-name" required placeholder="campaign1"></div>
-        <div><label>Гео (ISO-код)</label><input id="c-geo" required maxlength="2" placeholder="US"></div>
-        <div><label>Оффер</label><select id="c-offer" required></select></div>
-      </div>
-      <div class="row">
-        <div><label>Домен</label><select id="c-domain"></select></div>
-        <div><label>Группа</label><select id="c-group"></select></div>
-        <div><label>Источник</label><select id="c-source"></select></div>
-      </div>
-      <button class="primary" type="submit">Создать</button>
-      <div id="c-msg"></div>
-    </form>
-  </section>
-
-  <section id="view-edit" class="hidden">
-    <div class="card">
-      <div class="row">
-        <div><label>ID кампании в Keitaro</label><input id="e-id" type="number" min="1" placeholder="123"></div>
-        <div><label>Недавно созданные</label><select id="e-recent"><option value="">—</option></select></div>
-      </div>
-      <button class="primary" id="e-load">Загрузить</button>
-      <div id="e-msg"></div>
+<section id="view-create" class="card">
+  <form id="create-form">
+    <div class="row">
+      <div><label>Название (префикс добавится сам)</label><input id="c-name" required placeholder="campaign1"></div>
+      <div><label>Гео (ISO-код)</label><input id="c-geo" required maxlength="2" placeholder="US"></div>
+      <div><label>Оффер</label><select id="c-offer" required></select></div>
     </div>
-    <div id="e-body"></div>
-  </section>
-</main>
+    <div class="row">
+      <div><label>Домен</label><select id="c-domain"></select></div>
+      <div><label>Группа</label><select id="c-group"></select></div>
+      <div><label>Источник</label><select id="c-source"></select></div>
+    </div>
+    <button class="primary" type="submit">Создать</button>
+    <div id="c-msg"></div>
+  </form>
+</section>
+
+<section id="view-edit" class="hidden">
+  <div class="card">
+    <div class="row">
+      <div><label>ID кампании в Keitaro</label><input id="e-id" type="number" min="1" placeholder="123"></div>
+      <div><label>Недавно созданные</label><select id="e-recent"><option value="">—</option></select></div>
+    </div>
+    <button class="primary" id="e-load">Загрузить</button>
+    <div id="e-msg"></div>
+  </div>
+  <div id="e-body"></div>
+</section>
 
 <script>
 const $ = (id) => document.getElementById(id);
 let dict = { offers: [] };
 let currentCampaign = null;
 
+function esc(v) { const d = document.createElement('div'); d.textContent = v == null ? '' : String(v); return d.innerHTML; }
+function errorMessage(data) {
+  const d = data && data.detail;
+  if (Array.isArray(d)) return d.map(e => (e.loc || []).slice(1).join('.') + ': ' + e.msg).join('; ');
+  if (typeof d === 'string') return d;
+  return JSON.stringify(data);
+}
 async function api(path, opts = {}) {
   const r = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts });
   const text = await r.text();
-  let data; try { data = JSON.parse(text); } catch { data = text; }
-  if (!r.ok) throw new Error(errorMessage(data) || text || r.statusText);
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch (e) { data = { detail: text }; }
+  if (!r.ok) throw new Error(errorMessage(data));
   return data;
 }
-function errorMessage(data) {
-  if (!data || data.detail === undefined) return '';
-  const d = data.detail;
-  if (typeof d === 'string') return d;
-  if (Array.isArray(d)) return d.map(i => (i.loc ? i.loc.slice(1).join('.') + ': ' : '') + (i.msg || '')).join('; ');
-  return JSON.stringify(d);
-}
-const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 function show(el, text, ok) { el.innerHTML = `<div class="msg ${ok ? 'ok' : 'err'}"></div>`; el.firstChild.textContent = text; }
-function fill(sel, items, withEmpty) {
-  sel.innerHTML = (withEmpty ? '<option value="">по умолчанию (первый)</option>' : '') +
-    items.map(i => `<option value="${i.id}">${esc(i.name)} (#${i.id})</option>`).join('');
-}
 
-function switchTab(name) {
-  for (const t of ['create', 'edit']) {
-    $('tab-' + t).classList.toggle('active', t === name);
-    $('view-' + t).classList.toggle('hidden', t !== name);
-  }
-  if (name === 'edit') loadRecent();
+function fill(sel, items, withEmpty) {
+  sel.innerHTML = '';
+  if (withEmpty) sel.append(new Option('— по умолчанию —', ''));
+  for (const it of items) sel.append(new Option(it.name, it.id));
 }
-$('tab-create').onclick = () => switchTab('create');
-$('tab-edit').onclick = () => switchTab('edit');
 
 async function init() {
-  try {
-    dict = await api('/api/dictionaries');
-    fill($('c-offer'), dict.offers, false);
-    fill($('c-domain'), dict.domains, true);
-    fill($('c-group'), dict.groups, true);
-    fill($('c-source'), dict.sources, true);
-  } catch (e) { show($('c-msg'), 'Не удалось загрузить справочники Keitaro: ' + e.message, false); }
+  try { dict = await api('/api/dictionaries'); } catch (e) { show($('c-msg'), e.message, false); return; }
+  fill($('c-offer'), dict.offers, false);
+  fill($('c-domain'), dict.domains, true);
+  fill($('c-group'), dict.groups, true);
+  fill($('c-source'), dict.sources, true);
+  loadRecent();
 }
-
-$('create-form').onsubmit = async (ev) => {
-  ev.preventDefault();
-  const btn = ev.submitter; btn.disabled = true;
-  const num = (v) => v ? Number(v) : null;
-  try {
-    const res = await api('/api/campaigns', { method: 'POST', body: JSON.stringify({
-      name: $('c-name').value.trim(), geo: $('c-geo').value.trim(), offer_id: Number($('c-offer').value),
-      domain_id: num($('c-domain').value), group_id: num($('c-group').value), source_id: num($('c-source').value),
-    })});
-    show($('c-msg'), `Кампания создана: «${res.name}», ID ${res.id}`, true);
-  } catch (e) { show($('c-msg'), e.message, false); }
-  btn.disabled = false;
-};
 
 async function loadRecent() {
   try {
-    const list = await api('/api/campaigns');
-    $('e-recent').innerHTML = '<option value="">—</option>' + list.map(c => `<option value="${c.id}">${esc(c.name)} (#${c.id})</option>`).join('');
-  } catch {}
+    const rows = await api('/api/campaigns');
+    const sel = $('e-recent');
+    sel.innerHTML = '<option value="">—</option>';
+    for (const r of rows) sel.append(new Option(`${r.name} (#${r.id})`, r.id));
+  } catch (e) { /* ignore */ }
 }
-$('e-recent').onchange = () => { if ($('e-recent').value) $('e-id').value = $('e-recent').value; };
-$('e-load').onclick = () => loadCampaign(Number($('e-id').value));
 
 async function loadCampaign(id) {
   if (!id) return show($('e-msg'), 'Введите ID кампании', false);
@@ -159,25 +134,53 @@ function render() {
   if (c.stats_error) html += `<div class="msg err">Статистика не загрузилась, цифры ниже недостоверны: ${esc(c.stats_error)}</div>`;
   for (const s of c.streams) {
     const isOffers = s.schema === 'landings';
-    html += `<div class="card"><strong>${esc(s.name || 'Поток')}</strong> <span class="muted">· ${s.schema}</span>`;
+    const dirtyCls = s.dirty ? 'dirty' : '';
+    html += `<div class="card ${dirtyCls}"><strong>${esc(s.name || 'Поток')}</strong> <span class="muted">· ${esc(s.schema)}</span>${s.dirty ? ' <span class="badge pending">не опубликован</span>' : ''}`;
     if (!isOffers) { html += `<p class="muted">Редирект, офферов нет.</p></div>`; continue; }
-    html += `<table><thead><tr><th>Оффер</th><th>Доля, %</th><th>Клики</th><th>Уники</th><th>Конверсии</th><th>Доход</th><th>Расход</th><th>Профит</th><th></th></tr></thead><tbody>`;
+    html += `<table><thead><tr><th>Оффер</th><th>Доля, %</th><th>Статус</th><th>Закреп.</th><th>Клики</th><th>Уники</th><th>Конверсии</th><th>Доход</th><th>Расход</th><th>Профит</th><th></th></tr></thead><tbody>`;
     for (const o of s.offers) {
-      const st = o.stats;
-      html += `<tr><td>${esc(o.name)} <span class="muted">#${o.offer_id}</span></td><td>${o.share}</td><td>${fmt(st.clicks)}</td><td>${fmt(st.unique_clicks)}</td><td>${fmt(st.conversions)}</td><td>${fmt(st.revenue)}</td><td>${fmt(st.cost)}</td><td>${fmt(st.profit)}</td>
-        <td><button class="danger" data-del="${o.offer_id}" data-stream="${s.id}">Удалить</button></td></tr>`;
+      const st = o.stats || {};
+      const removed = o.status === 'removed';
+      const rowCls = removed ? 'removed' : '';
+      const statusBadge = o.status === 'pending_add' ? '<span class="badge pending">новый</span>'
+        : o.status === 'pending_remove' ? '<span class="badge pending">к удалению</span>'
+        : o.status === 'removed' ? '<span class="badge removed">архив</span>' : '';
+      html += `<tr class="${rowCls}">
+        <td>${esc(o.name)} <span class="muted">#${o.offer_id}</span></td>
+        <td>${o.share}</td>
+        <td>${statusBadge}</td>
+        <td><input type="checkbox" data-pin="${o.offer_id}" data-stream="${s.id}" ${o.pinned ? 'checked' : ''} ${removed ? 'disabled' : ''}></td>
+        <td>${fmt(st.clicks)}</td><td>${fmt(st.unique_clicks)}</td><td>${fmt(st.conversions)}</td>
+        <td>${fmt(st.revenue)}</td><td>${fmt(st.cost)}</td><td>${fmt(st.profit)}</td>
+        <td class="actions">
+          ${removed
+            ? `<button class="restore" data-restore="${o.offer_id}" data-stream="${s.id}">Вернуть</button>`
+            : `<button class="danger" data-del="${o.offer_id}" data-stream="${s.id}">Удалить</button>`}
+        </td></tr>`;
     }
-    const used = new Set(s.offers.map(o => o.offer_id));
+    const used = new Set(s.offers.filter(o => o.status !== 'removed').map(o => o.offer_id));
     const free = dict.offers.filter(o => !used.has(o.id));
     html += `</tbody></table>
       <div class="row" style="margin-top:12px;align-items:end">
         <div><label>Добавить оффер</label><select id="add-sel-${s.id}">${free.map(o => `<option value="${o.id}">${esc(o.name)} (#${o.id})</option>`).join('')}</select></div>
         <div><button class="primary" style="margin-top:0" data-add="${s.id}">Добавить</button></div>
-      </div></div>`;
+      </div>`;
+    if (s.dirty) {
+      html += `<div class="row" style="margin-top:12px">
+        <button class="primary" data-push="${s.id}">Опубликовать</button>
+        <button data-cancel="${s.id}">Отменить</button>
+      </div>`;
+    }
+    html += `</div>`;
   }
   $('e-body').innerHTML = html;
+
   $('e-body').querySelectorAll('[data-del]').forEach(b => b.onclick = () => changeOffer('DELETE', b, b.dataset.del, b.dataset.stream));
   $('e-body').querySelectorAll('[data-add]').forEach(b => b.onclick = () => changeOffer('POST', b, $('add-sel-' + b.dataset.add).value, b.dataset.add));
+  $('e-body').querySelectorAll('[data-restore]').forEach(b => b.onclick = () => restoreOffer(b, b.dataset.restore, b.dataset.stream));
+  $('e-body').querySelectorAll('[data-push]').forEach(b => b.onclick = () => pushStream(b, b.dataset.push));
+  $('e-body').querySelectorAll('[data-cancel]').forEach(b => b.onclick = () => cancelStream(b, b.dataset.cancel));
+  $('e-body').querySelectorAll('[data-pin]').forEach(cb => cb.onchange = () => pinOffer(cb, cb.dataset.pin, cb.dataset.stream, cb.checked));
 }
 
 async function changeOffer(method, btn, offerId, streamId) {
@@ -193,6 +196,75 @@ async function changeOffer(method, btn, offerId, streamId) {
     render();
   } catch (e) { show($('e-msg'), e.message, false); btn.disabled = false; }
 }
+
+async function restoreOffer(btn, offerId, streamId) {
+  btn.disabled = true;
+  const id = currentCampaign.id;
+  try {
+    currentCampaign = await api(`/api/campaigns/${id}/offers/${offerId}/restore?stream_id=${streamId}`, { method: 'POST' });
+    $('e-msg').innerHTML = '';
+    render();
+  } catch (e) { show($('e-msg'), e.message, false); btn.disabled = false; }
+}
+
+async function pushStream(btn, streamId) {
+  btn.disabled = true;
+  const id = currentCampaign.id;
+  try {
+    currentCampaign = await api(`/api/campaigns/${id}/push?stream_id=${streamId}`, { method: 'POST' });
+    $('e-msg').innerHTML = '';
+    render();
+  } catch (e) { show($('e-msg'), e.message, false); btn.disabled = false; }
+}
+
+async function cancelStream(btn, streamId) {
+  if (!confirm('Отменить неопубликованные изменения?')) return;
+  btn.disabled = true;
+  const id = currentCampaign.id;
+  try {
+    currentCampaign = await api(`/api/campaigns/${id}/cancel?stream_id=${streamId}`, { method: 'POST' });
+    $('e-msg').innerHTML = '';
+    render();
+  } catch (e) { show($('e-msg'), e.message, false); btn.disabled = false; }
+}
+
+async function pinOffer(cb, offerId, streamId, pinned) {
+  const id = currentCampaign.id;
+  try {
+    currentCampaign = await api(`/api/campaigns/${id}/offers/${offerId}/pin?stream_id=${streamId}&pinned=${pinned}`, { method: 'POST' });
+    $('e-msg').innerHTML = '';
+    render();
+  } catch (e) { show($('e-msg'), e.message, false); cb.checked = !pinned; }
+}
+
+$('tab-create').onclick = () => switchTab('create');
+$('tab-edit').onclick = () => switchTab('edit');
+function switchTab(name) {
+  $('view-create').classList.toggle('hidden', name !== 'create');
+  $('view-edit').classList.toggle('hidden', name !== 'edit');
+  $('tab-create').classList.toggle('active', name === 'create');
+  $('tab-edit').classList.toggle('active', name === 'edit');
+}
+
+$('create-form').onsubmit = async (e) => {
+  e.preventDefault();
+  const body = {
+    name: $('c-name').value.trim(),
+    geo: $('c-geo').value.trim(),
+    offer_id: Number($('c-offer').value),
+    domain_id: $('c-domain').value ? Number($('c-domain').value) : null,
+    group_id: $('c-group').value ? Number($('c-group').value) : null,
+    source_id: $('c-source').value ? Number($('c-source').value) : null,
+  };
+  try {
+    const r = await api('/api/campaigns', { method: 'POST', body: JSON.stringify(body) });
+    show($('c-msg'), `Создана кампания #${r.id} «${r.name}»`, true);
+    loadRecent();
+  } catch (e) { show($('c-msg'), e.message, false); }
+};
+
+$('e-load').onclick = () => loadCampaign($('e-id').value);
+$('e-recent').onchange = (e) => { if (e.target.value) { $('e-id').value = e.target.value; loadCampaign(e.target.value); } };
 
 init();
 </script>
