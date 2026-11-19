@@ -80,14 +80,14 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     """Close the shared HTTP client so connections are released on shutdown."""
     logger.info("application startup")
     try:
-        with engine.connect() as conn:
-            conn.execute(text("SELECT 1"))
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
         logger.info("database reachable")
     except Exception as e:  # pragma: no cover
         logger.error("database unreachable at startup: %s", e)
     yield
-    close_client()
-    engine.dispose()
+    await close_client()
+    await engine.dispose()
     logger.info("application shutdown")
 
 
@@ -219,11 +219,11 @@ def healthz() -> JSONResponse:
 
 
 @app.get("/readyz", tags=["ops"])
-def readyz() -> JSONResponse:
+async def readyz() -> JSONResponse:
     """Readiness probe: database is reachable."""
     try:
-        with engine.connect() as conn:
-            conn.execute(text("SELECT 1"))
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
     except Exception as e:  # pragma: no cover
         logger.warning("readiness check failed: %s", e)
         return JSONResponse(status_code=503, content={"status": "not ready"})

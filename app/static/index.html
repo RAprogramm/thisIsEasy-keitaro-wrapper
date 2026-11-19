@@ -64,6 +64,8 @@
     <div class="row">
       <div><label>ID кампании в Keitaro</label><input id="e-id" type="number" min="1" placeholder="123"></div>
       <div><label>Недавно созданные</label><select id="e-recent"><option value="">—</option></select></div>
+      <div><label>Статистика с</label><input id="e-from" type="date"></div>
+      <div><label>по</label><input id="e-to" type="date"></div>
     </div>
     <button class="primary" id="e-load">Загрузить</button>
     <div id="e-msg"></div>
@@ -120,7 +122,12 @@ async function loadRecent() {
 async function loadCampaign(id) {
   if (!id) return show($('e-msg'), 'Введите ID кампании', false);
   try {
-    currentCampaign = await api('/api/campaigns/' + id);
+    const params = new URLSearchParams();
+    const from = $('e-from').value, to = $('e-to').value;
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    const qs = params.toString() ? '?' + params.toString() : '';
+    currentCampaign = await api('/api/campaigns/' + id + qs);
     $('e-msg').innerHTML = '';
     render();
   } catch (e) { $('e-body').innerHTML = ''; show($('e-msg'), e.message, false); }
@@ -264,6 +271,8 @@ $('create-form').onsubmit = async (e) => {
 };
 
 $('e-load').onclick = () => loadCampaign($('e-id').value);
+$('e-from').onchange = () => { if ($('e-id').value) loadCampaign($('e-id').value); };
+$('e-to').onchange = () => { if ($('e-id').value) loadCampaign($('e-id').value); };
 $('e-recent').onchange = (e) => { if (e.target.value) { $('e-id').value = e.target.value; loadCampaign(e.target.value); } };
 
 init();

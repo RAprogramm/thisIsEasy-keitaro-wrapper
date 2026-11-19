@@ -1,9 +1,10 @@
 """Thin client for the Keitaro Admin API v1 (Api-Key header)."""
 
+import asyncio
 import logging
 import random
 import threading
-import time
+from collections.abc import Callable
 from typing import Any, ClassVar, TypedDict, cast
 
 import httpx
@@ -79,9 +80,9 @@ class KeitaroStream(TypedDict, total=False):
 
 
 class KeitaroClient:
-    """Minimal synchronous client over the Keitaro Admin API v1.
+    """Async client over the Keitaro Admin API v1.
 
-    Wraps a persistent ``httpx.Client`` so connections are reused between calls.
+    Wraps a persistent ``httpx.AsyncClient`` so connections are reused between calls.
     """
 
     def __init__(self, base_url: str | None = None, api_key: str | None = None) -> None:
@@ -89,9 +90,9 @@ class KeitaroClient:
         self.headers = {
             "Api-Key": (api_key or settings.keitaro_api_key.get_secret_value())
         }
-        self._sleep = time.sleep
+        self._sleep: Callable[[float], Any] = asyncio.sleep
         self.MAX_ATTEMPTS = 3
-        self._client = httpx.Client(
+        self._client = httpx.AsyncClient(
             base_url=self.base,
             headers=self.headers,
             timeout=settings.keitaro_timeout,
@@ -99,17 +100,17 @@ class KeitaroClient:
 
     RETRYABLE_STATUSES: ClassVar[frozenset[int]] = frozenset({429, 502, 503, 504})
 
-    def _request(self, method: str, path: str, **kwargs: Any) -> Any:
+    async def _request(self, method: str, path: str, **kwargs: Any) -> Any:
         last_error: Exception | None = None
         for attempt in range(1, self.MAX_ATTEMPTS + 1):
             try:
-                r = self._client.request(method, path, **kwargs)
+                r = await self._client.request(method, path, **kwargs)
             except httpx.HTTPError as e:
                 last_error = e
                 if attempt == self.MAX_ATTEMPTS:
                     logger.warning("Keitaro unreachable: %s %s: %s", method, path, e)
                     raise HTTPException(502, f"Keitaro недоступен: {e}") from e
-                self._sleep_backoff(attempt, None)
+                await self._sleep_backoff(attempt, None)
                 continue
             if r.status_code in self.RETRYABLE_STATUSES:
                 last_error = HTTPException(r.status_code, f"Keitaro: {r.text[:500]}")
@@ -123,7 +124,7 @@ class KeitaroClient:
                     )
                     raise HTTPException(r.status_code, f"Keitaro: {r.text[:500]}")
                 retry_after = r.headers.get("Retry-After")
-                self._sleep_backoff(attempt, retry_after)
+                await self._sleep_backoff(attempt, retry_after)
                 continue
             if r.status_code >= 400:
                 logger.warning(
@@ -139,65 +140,91 @@ class KeitaroClient:
             502, "Keitaro недоступен"
         ) from last_error  # pragma: no cover
 
-    def _sleep_backoff(self, attempt: int, retry_after: str | None) -> None:
+    async def _sleep_backoff(self, attempt: int, retry_after: str | None) -> None:
         if retry_after is not None:
             try:
                 delay = float(retry_after)
             except ValueError:
                 delay = 0.0
-            self._sleep(min(delay, 5.0))
+            result = self._sleep(min(delay, 5.0))
+            if asyncio.iscoroutine(result):  # pragma: no cover
+                await result  # pragma: no cover
             return
         delay = min(2 ** (attempt - 1), 4) + random.uniform(0, 0.25)  # noqa: S311
-        self._sleep(delay)
+        result = self._sleep(delay)
+        if asyncio.iscoroutine(result):
+            await result
 
     # --- dictionaries ---
-    def domains(self) -> list[KeitaroDomain]:
-        return cast(list[KeitaroDomain], self._request("GET", "/domains"))
+    async def domains(self) -> list[KeitaroDomain]:
+        return cast(list[KeitaroDomain], await self._request("GET", "/domains"))
 
-    def groups(self) -> list[KeitaroGroup]:
+    async def groups(self) -> list[KeitaroGroup]:
         return cast(
             list[KeitaroGroup],
-            self._request("GET", "/groups", params={"type": "campaigns"}),
+            await self._request("GET", "/groups", params={"type": "campaigns"}),
         )
 
-    def traffic_sources(self) -> list[KeitaroSource]:
-        return cast(list[KeitaroSource], self._request("GET", "/traffic_sources"))
+    async def traffic_sources(self) -> list[KeitaroSource]:
+        return cast(list[KeitaroSource], await self._request("GET", "/traffic_sources"))
 
-    def offers(self) -> list[KeitaroOffer]:
-        return cast(list[KeitaroOffer], self._request("GET", "/offers"))
+    async def offers(self) -> list[KeitaroOffer]:
+        return cast(list[KeitaroOffer], await self._request("GET", "/offers"))
 
     # --- campaigns and streams ---
-    def create_campaign(self, payload: dict[str, Any]) -> KeitaroCampaign:
-        return cast(KeitaroCampaign, self._request("POST", "/campaigns", json=payload))
-
-    def get_campaign(self, campaign_id: int) -> KeitaroCampaign:
-        return cast(KeitaroCampaign, self._request("GET", f"/campaigns/{campaign_id}"))
-
-    def delete_campaign(self, campaign_id: int) -> KeitaroCampaign | None:
+    async def create_campaign(self, payload: dict[str, Any]) -> KeitaroCampaign:
         return cast(
-            KeitaroCampaign, self._request("DELETE", f"/campaigns/{campaign_id}")
+            KeitaroCampaign, await self._request("POST", "/campaigns", json=payload)
         )
 
-    def campaign_streams(self, campaign_id: int) -> list[KeitaroStream]:
+    async def get_campaign(self, campaign_id: int) -> KeitaroCampaign:
+        return cast(
+            KeitaroCampaign, await self._request("GET", f"/campaigns/{campaign_id}")
+        )
+
+    async def delete_campaign(self, campaign_id: int) -> KeitaroCampaign | None:
+        return cast(
+            KeitaroCampaign, await self._request("DELETE", f"/campaigns/{campaign_id}")
+        )
+
+    async def campaign_streams(self, campaign_id: int) -> list[KeitaroStream]:
         return cast(
             list[KeitaroStream],
-            self._request("GET", f"/campaigns/{campaign_id}/streams"),
+            await self._request("GET", f"/campaigns/{campaign_id}/streams"),
         )
 
-    def create_stream(self, payload: dict[str, Any]) -> KeitaroStream:
-        return cast(KeitaroStream, self._request("POST", "/streams", json=payload))
-
-    def update_stream(self, stream_id: int, payload: dict[str, Any]) -> KeitaroStream:
+    async def create_stream(self, payload: dict[str, Any]) -> KeitaroStream:
         return cast(
-            KeitaroStream, self._request("PUT", f"/streams/{stream_id}", json=payload)
+            KeitaroStream, await self._request("POST", "/streams", json=payload)
+        )
+
+    async def update_stream(
+        self, stream_id: int, payload: dict[str, Any]
+    ) -> KeitaroStream:
+        return cast(
+            KeitaroStream,
+            await self._request("PUT", f"/streams/{stream_id}", json=payload),
         )
 
     # --- statistics ---
-    def report(
-        self, campaign_id: int, grouping: list[str], interval: str
+    async def report(
+        self,
+        campaign_id: int,
+        grouping: list[str],
+        interval: str = "all_time",
+        date_from: str | None = None,
+        date_to: str | None = None,
     ) -> dict[str, Any]:
+        if date_from or date_to:
+            rng: dict[str, Any] = {}
+            if date_from:
+                rng["from"] = date_from
+            if date_to:
+                rng["to"] = date_to
+        else:
+            rng = {"interval": interval}
         body = {
-            "range": {"interval": interval},
+            "range": rng,
             "dimensions": grouping,
             "measures": [
                 "clicks",
@@ -211,11 +238,13 @@ class KeitaroClient:
                 {"name": "campaign_id", "operator": "EQUALS", "expression": campaign_id}
             ],
         }
-        return cast(dict[str, Any], self._request("POST", "/report/build", json=body))
+        return cast(
+            dict[str, Any], await self._request("POST", "/report/build", json=body)
+        )
 
-    def close(self) -> None:
+    async def close(self) -> None:
         """Release the underlying connection pool."""
-        self._client.close()
+        await self._client.aclose()
 
 
 _client: KeitaroClient | None = None
@@ -232,10 +261,10 @@ def get_client() -> KeitaroClient:
     return _client
 
 
-def close_client() -> None:
+async def close_client() -> None:
     """Close the shared client if it exists; safe to call more than once."""
     global _client
     with _client_lock:
         if _client is not None:
-            _client.close()
+            await _client.close()
             _client = None

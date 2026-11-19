@@ -5,7 +5,7 @@ from typing import Annotated, Any, Literal, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_db
 from ..keitaro import KeitaroClient, get_client
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/campaigns", tags=["editor"])
 
-DbSession = Annotated[Session, Depends(get_db)]
+DbSession = Annotated[AsyncSession, Depends(get_db)]
 Tracker = Annotated[KeitaroClient, Depends(get_client)]
 
 ACTIVE_STATUSES = (OfferStatus.ACTIVE, OfferStatus.PENDING_ADD)
@@ -75,11 +75,20 @@ def _zero_stats() -> OfferStats:
     )
 
 
-def _stats_by_offer(
-    k: KeitaroClient, campaign_id: int
+async def _stats_by_offer(
+    k: KeitaroClient,
+    campaign_id: int,
+    date_from: str | None = None,
+    date_to: str | None = None,
 ) -> tuple[dict[int, OfferStats], str | None]:
     try:
-        rep = k.report(campaign_id, ["offer_id"], interval="all_time")
+        rep = await k.report(
+            campaign_id,
+            ["offer_id"],
+            interval="all_time",
+            date_from=date_from,
+            date_to=date_to,
+        )
     except HTTPException as e:
         return {}, str(e.detail)
     out: dict[int, OfferStats] = {}
@@ -97,19 +106,20 @@ def _stats_by_offer(
     return out, None
 
 
-def _local_offers(db: Session, campaign_id: int, stream_id: int) -> list[StreamOffer]:
-    return list(
-        db.scalars(
-            select(StreamOffer).where(
-                StreamOffer.keitaro_campaign_id == campaign_id,
-                StreamOffer.stream_id == stream_id,
-            )
-        ).all()
+async def _local_offers(
+    db: AsyncSession, campaign_id: int, stream_id: int
+) -> list[StreamOffer]:
+    result = await db.execute(
+        select(StreamOffer).where(
+            StreamOffer.keitaro_campaign_id == campaign_id,
+            StreamOffer.stream_id == stream_id,
+        )
     )
+    return list(result.scalars().all())
 
 
-def _sync_stream(
-    db: Session,
+async def _sync_stream(
+    db: AsyncSession,
     campaign_id: int,
     stream_id: int,
     keitaro_offers: Any,
@@ -118,7 +128,7 @@ def _sync_stream(
     keitaro_ids = {o["offer_id"] for o in keitaro_offers}
     keitaro_share = {o["offer_id"]: o.get("share") for o in keitaro_offers}
 
-    rows = _local_offers(db, campaign_id, stream_id)
+    rows = await _local_offers(db, campaign_id, stream_id)
     dirty = _is_dirty(rows)
     for r in rows:
         if r.status == OfferStatus.ACTIVE:
@@ -147,8 +157,8 @@ def _sync_stream(
                     status=OfferStatus.ACTIVE,
                 )
             )
-    db.commit()
-    return _local_offers(db, campaign_id, stream_id)
+    await db.commit()
+    return await _local_offers(db, campaign_id, stream_id)
 
 
 def _is_dirty(offers: list[StreamOffer]) -> bool:
@@ -160,127 +170,125 @@ def _is_dirty(offers: list[StreamOffer]) -> bool:
     )
 
 
-def _log(
-    db: Session,
+async def _log(
+    db: AsyncSession,
     keitaro_campaign_id: int,
     offer_id: int,
     action: Literal["add", "remove"],
 ) -> None:
-    rec = db.scalars(
+    result = await db.execute(
         select(CampaignRecord).where(CampaignRecord.keitaro_id == keitaro_campaign_id)
-    ).first()
+    )
+    rec = result.scalar_one_or_none()
     if rec:
         db.add(OfferChange(campaign_id=rec.id, offer_id=offer_id, action=action))
-        db.commit()
+        await db.commit()
 
 
-def _unlog(
-    db: Session,
+async def _unlog(
+    db: AsyncSession,
     keitaro_campaign_id: int,
     offer_id: int,
     action: Literal["add", "remove"],
 ) -> None:
-    rec = db.scalars(
+    result = await db.execute(
         select(CampaignRecord).where(CampaignRecord.keitaro_id == keitaro_campaign_id)
-    ).first()
+    )
+    rec = result.scalar_one_or_none()
     if rec:
-        entries = db.scalars(
+        result = await db.execute(
             select(OfferChange).where(
                 OfferChange.campaign_id == rec.id,
                 OfferChange.offer_id == offer_id,
                 OfferChange.action == action,
             )
-        ).all()
-        for e in entries:
-            db.delete(e)
-        if entries:
-            db.commit()
-
-
-def get_campaign(
-    campaign_id: int, k: Tracker, db: DbSession | None = None
-) -> CampaignView:
-    if db is None:  # pragma: no cover
-        from ..db import SessionLocal
-
-        db = SessionLocal()
-        close_after = True
-    else:  # pragma: no cover
-        close_after = False
-    try:  # pragma: no cover
-        campaign = k.get_campaign(campaign_id)
-        streams = k.campaign_streams(campaign_id)
-        stats, stats_error = _stats_by_offer(k, campaign_id)
-        names = {o["id"]: o["name"] for o in k.offers()}
-
-        result_streams = []
-        for s in streams:
-            sid = s["id"]
-            keitaro_offers = (
-                s.get("offers", []) if s.get("schema") == "landings" else []
-            )
-            if s.get("schema") == "landings":
-                offers_rows = _sync_stream(db, campaign_id, sid, keitaro_offers)
-            else:
-                offers_rows = _local_offers(db, campaign_id, sid)
-
-            offers = []
-            for o in offers_rows:
-                oid = o.offer_id
-                offers.append(
-                    OfferView(
-                        offer_id=oid,
-                        name=names.get(oid, f"#{oid}"),
-                        share=o.share,
-                        state=OfferStatus.ACTIVE
-                        if o.status in ACTIVE_STATUSES
-                        else OfferStatus.REMOVED,
-                        status=o.status,
-                        pinned=o.pinned,
-                        stats=stats.get(oid, _zero_stats())
-                        if o.status in ACTIVE_STATUSES
-                        else _zero_stats(),
-                    )
-                )
-            result_streams.append(
-                StreamView(
-                    id=sid,
-                    name=s.get("name"),
-                    schema=s.get("schema"),
-                    offers=offers,
-                    dirty=_is_dirty(offers_rows),
-                )
-            )
-        return CampaignView(
-            id=campaign["id"],
-            name=campaign["name"],
-            streams=result_streams,
-            stats_error=stats_error,
         )
-    finally:  # pragma: no cover
-        if close_after:  # pragma: no cover
-            db.close()  # pragma: no cover
+        entries = result.scalars().all()
+        for e in entries:
+            await db.delete(e)
+        if entries:
+            await db.commit()
+
+
+async def get_campaign(
+    campaign_id: int,
+    k: Tracker,
+    db: DbSession,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> CampaignView:
+    campaign = await k.get_campaign(campaign_id)
+    streams = await k.campaign_streams(campaign_id)
+    stats, stats_error = await _stats_by_offer(k, campaign_id, date_from, date_to)
+    names = {o["id"]: o["name"] for o in await k.offers()}
+
+    result_streams = []
+    for s in streams:
+        sid = s["id"]
+        keitaro_offers = s.get("offers", []) if s.get("schema") == "landings" else []
+        if s.get("schema") == "landings":
+            offers_rows = await _sync_stream(db, campaign_id, sid, keitaro_offers)
+        else:
+            offers_rows = await _local_offers(db, campaign_id, sid)
+
+        offers = []
+        for o in offers_rows:
+            oid = o.offer_id
+            offers.append(
+                OfferView(
+                    offer_id=oid,
+                    name=names.get(oid, f"#{oid}"),
+                    share=o.share,
+                    state="active" if o.status in ACTIVE_STATUSES else "removed",
+                    status=o.status,
+                    pinned=o.pinned,
+                    stats=stats.get(oid, _zero_stats())
+                    if o.status in ACTIVE_STATUSES
+                    else _zero_stats(),
+                )
+            )
+        result_streams.append(
+            StreamView(
+                id=sid,
+                name=s.get("name"),
+                schema=s.get("schema"),
+                offers=offers,
+                dirty=_is_dirty(offers_rows),
+            )
+        )
+    return CampaignView(
+        id=campaign["id"],
+        name=campaign["name"],
+        streams=result_streams,
+        stats_error=stats_error,
+    )
 
 
 @router.get("/{campaign_id}")
-def get_campaign_endpoint(campaign_id: int, k: Tracker, db: DbSession) -> CampaignView:
-    return get_campaign(campaign_id, k, db)
+async def get_campaign_endpoint(
+    campaign_id: int,
+    k: Tracker,
+    db: DbSession,
+    date_from: Annotated[str | None, Query(alias="from")] = None,
+    date_to: Annotated[str | None, Query(alias="to")] = None,
+) -> CampaignView:
+    return await get_campaign(campaign_id, k, db, date_from, date_to)
 
 
 @router.post("/{campaign_id}/offers")
-def add_offer(
+async def add_offer(
     campaign_id: int,
     body: OfferAdd,
     db: DbSession,
     k: Tracker,
 ) -> CampaignView:
-    if not any(o["id"] == body.offer_id for o in k.offers()):
+    if not any(o["id"] == body.offer_id for o in await k.offers()):
         raise HTTPException(400, f"Оффер {body.offer_id} не найден в Keitaro")
-    stream = _offer_stream(k.campaign_streams(campaign_id), body.stream_id)
+    stream = _offer_stream(await k.campaign_streams(campaign_id), body.stream_id)
     sid = stream["id"]
-    _sync_stream(db, campaign_id, sid, stream.get("offers", []))
+    await _sync_stream(db, campaign_id, sid, stream.get("offers", []))
 
-    rows = _local_offers(db, campaign_id, sid)
+    rows = await _local_offers(db, campaign_id, sid)
     existing = next((r for r in rows if r.offer_id == body.offer_id), None)
     if existing is not None and existing.status != OfferStatus.REMOVED:
         raise HTTPException(409, "Оффер уже есть в потоке")
@@ -301,36 +309,36 @@ def add_offer(
                 status=OfferStatus.PENDING_ADD,
             )
         )
-    db.commit()
-    _log(db, campaign_id, body.offer_id, "add")
+    await db.commit()
+    await _log(db, campaign_id, body.offer_id, "add")
     logger.info("added offer %s to campaign %s", body.offer_id, campaign_id)
 
-    rows = _local_offers(db, campaign_id, sid)
+    rows = await _local_offers(db, campaign_id, sid)
     _rebalance(rows)
-    db.commit()
-    return get_campaign(campaign_id, k, db)
+    await db.commit()
+    return await get_campaign(campaign_id, k, db)
 
 
 @router.delete("/{campaign_id}/offers/{offer_id}")
-def remove_offer(
+async def remove_offer(
     campaign_id: int,
     offer_id: int,
     db: DbSession,
     k: Tracker,
     stream_id: int | None = None,
 ) -> CampaignView:
-    stream = _offer_stream(k.campaign_streams(campaign_id), stream_id)
+    stream = _offer_stream(await k.campaign_streams(campaign_id), stream_id)
     sid = stream["id"]
-    _sync_stream(db, campaign_id, sid, stream.get("offers", []))
+    await _sync_stream(db, campaign_id, sid, stream.get("offers", []))
 
-    rows = _local_offers(db, campaign_id, sid)
+    rows = await _local_offers(db, campaign_id, sid)
     target = next((r for r in rows if r.offer_id == offer_id), None)
     if target is None or target.status == OfferStatus.REMOVED:
         raise HTTPException(404, "Оффера нет в потоке")
     if target.status == OfferStatus.PENDING_ADD:
-        _unlog(db, campaign_id, offer_id, "add")
-        db.delete(target)
-        db.commit()
+        await _unlog(db, campaign_id, offer_id, "add")
+        await db.delete(target)
+        await db.commit()
     else:
         target.status = OfferStatus.PENDING_REMOVE
         target.share = 0
@@ -339,28 +347,28 @@ def remove_offer(
             r for r in rows if r.status in ACTIVE_STATUSES and r is not target
         ]
         if not remaining_active:
-            db.rollback()
+            await db.rollback()
             raise HTTPException(400, "Нельзя удалить последний оффер потока")
         _rebalance(rows)
-        db.commit()
-        _log(db, campaign_id, offer_id, "remove")
+        await db.commit()
+        await _log(db, campaign_id, offer_id, "remove")
         logger.info("removed offer %s from campaign %s", offer_id, campaign_id)
-    return get_campaign(campaign_id, k, db)
+    return await get_campaign(campaign_id, k, db)
 
 
 @router.post("/{campaign_id}/offers/{offer_id}/restore")
-def restore_offer(
+async def restore_offer(
     campaign_id: int,
     offer_id: int,
     db: DbSession,
     k: Tracker,
     stream_id: int | None = None,
 ) -> CampaignView:
-    stream = _offer_stream(k.campaign_streams(campaign_id), stream_id)
+    stream = _offer_stream(await k.campaign_streams(campaign_id), stream_id)
     sid = stream["id"]
-    _sync_stream(db, campaign_id, sid, stream.get("offers", []))
+    await _sync_stream(db, campaign_id, sid, stream.get("offers", []))
 
-    rows = _local_offers(db, campaign_id, sid)
+    rows = await _local_offers(db, campaign_id, sid)
     target = next((r for r in rows if r.offer_id == offer_id), None)
     if target is None or target.status != OfferStatus.REMOVED:
         raise HTTPException(404, "Оффер не в архиве")
@@ -368,14 +376,14 @@ def restore_offer(
     target.share = 0
     target.pinned = False
     _rebalance(rows)
-    db.commit()
-    _log(db, campaign_id, offer_id, "add")
+    await db.commit()
+    await _log(db, campaign_id, offer_id, "add")
     logger.info("restored offer %s in campaign %s", offer_id, campaign_id)
-    return get_campaign(campaign_id, k, db)
+    return await get_campaign(campaign_id, k, db)
 
 
 @router.post("/{campaign_id}/offers/{offer_id}/pin")
-def pin_offer(
+async def pin_offer(
     campaign_id: int,
     offer_id: int,
     db: DbSession,
@@ -383,40 +391,40 @@ def pin_offer(
     stream_id: int | None = None,
     pinned: Annotated[bool, Query()] = True,
 ) -> CampaignView:
-    stream = _offer_stream(k.campaign_streams(campaign_id), stream_id)
+    stream = _offer_stream(await k.campaign_streams(campaign_id), stream_id)
     sid = stream["id"]
-    _sync_stream(db, campaign_id, sid, stream.get("offers", []))
+    await _sync_stream(db, campaign_id, sid, stream.get("offers", []))
 
-    rows = _local_offers(db, campaign_id, sid)
+    rows = await _local_offers(db, campaign_id, sid)
     target = next((r for r in rows if r.offer_id == offer_id), None)
     if target is None or target.status == OfferStatus.REMOVED:
         raise HTTPException(404, "Оффер не найден в потоке")
     target.pinned = pinned
     _rebalance(rows)
-    db.commit()
+    await db.commit()
     logger.info(
         "pinned state changed for offer %s in campaign %s", offer_id, campaign_id
     )
-    return get_campaign(campaign_id, k, db)
+    return await get_campaign(campaign_id, k, db)
 
 
 @router.post("/{campaign_id}/push")
-def push_stream(
+async def push_stream(
     campaign_id: int,
     db: DbSession,
     k: Tracker,
     stream_id: int | None = None,
 ) -> CampaignView:
-    stream = _offer_stream(k.campaign_streams(campaign_id), stream_id)
+    stream = _offer_stream(await k.campaign_streams(campaign_id), stream_id)
     sid = stream["id"]
-    _sync_stream(db, campaign_id, sid, stream.get("offers", []))
+    await _sync_stream(db, campaign_id, sid, stream.get("offers", []))
 
-    rows = _local_offers(db, campaign_id, sid)
+    rows = await _local_offers(db, campaign_id, sid)
     if not _is_dirty(rows):
-        return get_campaign(campaign_id, k, db)
+        return await get_campaign(campaign_id, k, db)
 
     push_offers = [r for r in rows if r.status in ACTIVE_STATUSES]
-    k.update_stream(sid, _stream_payload(push_offers))
+    await k.update_stream(sid, _stream_payload(push_offers))
 
     for r in rows:
         if r.status == OfferStatus.PENDING_ADD:
@@ -425,36 +433,36 @@ def push_stream(
             r.status = OfferStatus.REMOVED
         r.published_share = r.share
         r.published_pinned = r.pinned
-    db.commit()
+    await db.commit()
     logger.info("pushed stream %s of campaign %s", stream_id, campaign_id)
-    return get_campaign(campaign_id, k, db)
+    return await get_campaign(campaign_id, k, db)
 
 
 @router.post("/{campaign_id}/cancel")
-def cancel_stream(
+async def cancel_stream(
     campaign_id: int,
     db: DbSession,
     k: Tracker,
     stream_id: int | None = None,
 ) -> CampaignView:
-    stream = _offer_stream(k.campaign_streams(campaign_id), stream_id)
+    stream = _offer_stream(await k.campaign_streams(campaign_id), stream_id)
     sid = stream["id"]
-    rows = _local_offers(db, campaign_id, sid)
+    rows = await _local_offers(db, campaign_id, sid)
     for r in rows:
         if r.status == OfferStatus.PENDING_ADD:
-            _unlog(db, campaign_id, r.offer_id, "add")
-            db.delete(r)
+            await _unlog(db, campaign_id, r.offer_id, "add")
+            await db.delete(r)
         elif r.status == OfferStatus.PENDING_REMOVE:
-            _unlog(db, campaign_id, r.offer_id, "remove")
+            await _unlog(db, campaign_id, r.offer_id, "remove")
             r.status = OfferStatus.ACTIVE
             r.share = r.published_share
             r.pinned = r.published_pinned
         else:
             r.share = r.published_share
             r.pinned = r.published_pinned
-    db.commit()
+    await db.commit()
     logger.info(
         "cancelled staged changes for stream %s of campaign %s", stream_id, campaign_id
     )
-    _sync_stream(db, campaign_id, sid, stream.get("offers", []))
-    return get_campaign(campaign_id, k, db)
+    await _sync_stream(db, campaign_id, sid, stream.get("offers", []))
+    return await get_campaign(campaign_id, k, db)

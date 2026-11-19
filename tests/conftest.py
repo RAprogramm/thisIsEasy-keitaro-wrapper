@@ -1,7 +1,7 @@
 """Shared fixtures: a fake Keitaro client, a test database, and a TestClient."""
 
 import os
-from collections.abc import Iterator
+from collections.abc import AsyncGenerator, Iterator
 from typing import Any
 
 os.environ.setdefault("TEST_DATABASE_URL", "postgresql+psycopg:///keitaro_test")
@@ -12,6 +12,7 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app import models  # noqa: F401  (registers the tables on Base)
@@ -22,6 +23,11 @@ from app.main import app
 from app.routers import creator as creator_router
 
 TEST_DB_URL = os.environ["TEST_DATABASE_URL"]
+
+async_engine = create_async_engine(TEST_DB_URL)
+AsyncTestSession = async_sessionmaker(
+    bind=async_engine, autoflush=False, autocommit=False, expire_on_commit=False
+)
 
 engine = create_engine(TEST_DB_URL)
 TestSession = sessionmaker(bind=engine, autoflush=False, autocommit=False)
@@ -86,23 +92,23 @@ class FakeKeitaro:
     def _record(self, name: str, **kwargs: Any) -> None:
         self.calls.append((name, kwargs))
 
-    def domains(self) -> list[dict[str, Any]]:
+    async def domains(self) -> list[dict[str, Any]]:
         self._record("domains")
         return self.domains_list
 
-    def groups(self) -> list[dict[str, Any]]:
+    async def groups(self) -> list[dict[str, Any]]:
         self._record("groups")
         return self.groups_list
 
-    def traffic_sources(self) -> list[dict[str, Any]]:
+    async def traffic_sources(self) -> list[dict[str, Any]]:
         self._record("traffic_sources")
         return self.sources_list
 
-    def offers(self) -> list[dict[str, Any]]:
+    async def offers(self) -> list[dict[str, Any]]:
         self._record("offers")
         return self.offers_list
 
-    def create_campaign(self, payload: dict[str, Any]) -> dict[str, Any]:
+    async def create_campaign(self, payload: dict[str, Any]) -> dict[str, Any]:
         self._record("create_campaign", payload=payload)
         if self.create_campaign_failures:
             raise self.create_campaign_failures.pop(0)
@@ -112,22 +118,22 @@ class FakeKeitaro:
         self.campaigns[cid] = campaign
         return campaign
 
-    def delete_campaign(self, campaign_id: int) -> dict[str, Any] | None:
+    async def delete_campaign(self, campaign_id: int) -> dict[str, Any] | None:
         self._record("delete_campaign", campaign_id=campaign_id)
         if self.delete_campaign_failures:
             raise self.delete_campaign_failures.pop(0)
         self.deleted_campaigns.append(campaign_id)
         return self.campaigns.pop(campaign_id, None)
 
-    def get_campaign(self, campaign_id: int) -> dict[str, Any]:
+    async def get_campaign(self, campaign_id: int) -> dict[str, Any]:
         self._record("get_campaign", campaign_id=campaign_id)
         return self.campaigns[campaign_id]
 
-    def campaign_streams(self, campaign_id: int) -> list[dict[str, Any]]:
+    async def campaign_streams(self, campaign_id: int) -> list[dict[str, Any]]:
         self._record("campaign_streams", campaign_id=campaign_id)
         return self.streams.get(campaign_id, [])
 
-    def create_stream(self, payload: dict[str, Any]) -> dict[str, Any]:
+    async def create_stream(self, payload: dict[str, Any]) -> dict[str, Any]:
         self._record("create_stream", payload=payload)
         if self.create_stream_failures:
             raise self.create_stream_failures.pop(0)
@@ -137,7 +143,9 @@ class FakeKeitaro:
         self.streams.setdefault(payload["campaign_id"], []).append(stream)
         return stream
 
-    def update_stream(self, stream_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+    async def update_stream(
+        self, stream_id: int, payload: dict[str, Any]
+    ) -> dict[str, Any]:
         self._record("update_stream", stream_id=stream_id, payload=payload)
         for stream in self.streams.values():
             for existing in stream:
@@ -146,8 +154,13 @@ class FakeKeitaro:
                     return existing
         raise AssertionError("stream not found")
 
-    def report(
-        self, campaign_id: int, grouping: list[str], interval: str
+    async def report(
+        self,
+        campaign_id: int,
+        grouping: list[str],
+        interval: str = "all_time",
+        date_from: str | None = None,
+        date_to: str | None = None,
     ) -> dict[str, Any]:
         self._record(
             "report", campaign_id=campaign_id, grouping=grouping, interval=interval
@@ -164,12 +177,12 @@ def fake() -> FakeKeitaro:
 
 @pytest.fixture
 def client(fake: FakeKeitaro) -> Iterator[TestClient]:
-    def _override_db() -> Iterator[Session]:
-        session = TestSession()
+    async def _override_db() -> AsyncGenerator[AsyncSession]:
+        session = AsyncTestSession()
         try:
             yield session
         finally:
-            session.close()
+            await session.close()
 
     app.dependency_overrides[get_db] = _override_db
     app.dependency_overrides[get_client] = lambda: fake

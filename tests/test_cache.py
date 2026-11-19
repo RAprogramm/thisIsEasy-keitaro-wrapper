@@ -74,3 +74,19 @@ def test_cache_propagates_when_no_stale() -> None:
 
     with pytest.raises(ValueError, match="nope"):
         cache.get_or_set(factory)
+
+
+@pytest.mark.anyio
+async def test_async_cache_returns_cached_value_within_ttl() -> None:
+    clock = {"now": 0.0}
+    cache: TtlCache[int] = TtlCache(ttl=10.0, clock=lambda: clock["now"])
+    calls = {"n": 0}
+
+    async def factory() -> int:
+        calls["n"] += 1
+        return 42
+
+    assert await cache.aget_or_set(factory) == 42
+    clock["now"] = 5.0
+    assert await cache.aget_or_set(factory) == 42
+    assert calls["n"] == 1

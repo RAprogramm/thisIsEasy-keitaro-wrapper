@@ -1,8 +1,10 @@
 """In-process TTL cache for upstream dictionary lookups."""
 
+import asyncio
 import logging
 import time
 from collections.abc import Callable
+from typing import Any, cast
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +49,23 @@ class TtlCache[T]:
                 logger.warning("cache factory failed; returning stale value")
                 return self._value
             raise
+        self._value = value
+        self._expires_at = now + self._ttl
+        return value
+
+    async def aget_or_set(self, factory: Callable[[], Any]) -> T:
+        """Async variant of ``get_or_set`` for coroutine factories."""
+        now = self._clock()
+        if (
+            self._expires_at is not None
+            and now < self._expires_at
+            and self._value is not None
+        ):
+            return self._value
+        result = factory()
+        if asyncio.iscoroutine(result):
+            result = await result
+        value = cast(T, result)
         self._value = value
         self._expires_at = now + self._ttl
         return value

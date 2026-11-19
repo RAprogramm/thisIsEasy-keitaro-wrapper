@@ -6,7 +6,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..cache import TtlCache
 from ..config import settings
@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["creator"])
 
-DbSession = Annotated[Session, Depends(get_db)]
+DbSession = Annotated[AsyncSession, Depends(get_db)]
 Tracker = Annotated[KeitaroClient, Depends(get_client)]
 
 _dictionaries_cache: TtlCache[Dictionaries] = TtlCache(ttl=settings.dictionaries_ttl)
@@ -41,13 +41,13 @@ def _pick(items: list[Any], wanted: int | None, label: str) -> int:
     return int(items[0]["id"])
 
 
-def _create_campaign_with_retry(k: KeitaroClient, payload: dict[str, Any]) -> Any:
+async def _create_campaign_with_retry(k: KeitaroClient, payload: dict[str, Any]) -> Any:
     """Create the campaign, retrying when Keitaro rejects a colliding alias."""
     remaining = 3
     while True:
         remaining -= 1
         try:
-            return k.create_campaign({**payload, "alias": secrets.token_hex(6)})
+            return await k.create_campaign({**payload, "alias": secrets.token_hex(6)})
         except HTTPException as e:
             if remaining == 0 or "alias" not in str(e.detail).lower():
                 raise
@@ -90,33 +90,36 @@ def _offer_stream_payload(campaign_id: int, offer_id: int) -> dict[str, Any]:
 
 
 @router.get("/dictionaries")
-def dictionaries(k: Tracker) -> Dictionaries:
+async def dictionaries(k: Tracker) -> Dictionaries:
     """Dictionaries for the form: domains, groups, sources, offers."""
 
-    def fetch() -> Dictionaries:
+    async def fetch() -> Dictionaries:
         return Dictionaries(
-            domains=[DictItem(id=d["id"], name=d["name"]) for d in k.domains()],
-            groups=[DictItem(id=g["id"], name=g["name"]) for g in k.groups()],
-            sources=[DictItem(id=s["id"], name=s["name"]) for s in k.traffic_sources()],
-            offers=[DictItem(id=o["id"], name=o["name"]) for o in k.offers()],
+            domains=[DictItem(id=d["id"], name=d["name"]) for d in await k.domains()],
+            groups=[DictItem(id=g["id"], name=g["name"]) for g in await k.groups()],
+            sources=[
+                DictItem(id=s["id"], name=s["name"]) for s in await k.traffic_sources()
+            ],
+            offers=[DictItem(id=o["id"], name=o["name"]) for o in await k.offers()],
         )
 
-    return _dictionaries_cache.get_or_set(fetch)
+    return await _dictionaries_cache.aget_or_set(fetch)
 
 
 @router.post("/campaigns", status_code=201)
-def create_campaign(
+async def create_campaign(
     body: CampaignCreate,
     db: DbSession,
     k: Tracker,
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ) -> CampaignCreated:
     if idempotency_key:
-        existing = db.scalars(
+        result = await db.execute(
             select(CampaignRecord).where(
                 CampaignRecord.idempotency_key == idempotency_key
             )
-        ).first()
+        )
+        existing = result.scalar_one_or_none()
         if existing is not None:
             return CampaignCreated(
                 id=existing.keitaro_id,
@@ -125,13 +128,13 @@ def create_campaign(
                 group_id=existing.group_id or 0,
                 source_id=existing.source_id or 0,
             )
-    offers = k.offers()
+    offers = await k.offers()
     if not any(o["id"] == body.offer_id for o in offers):
         raise HTTPException(400, f"Оффер {body.offer_id} не найден в Keitaro")
 
-    domain_id = _pick(k.domains(), body.domain_id, "домен")
-    group_id = _pick(k.groups(), body.group_id, "группа")
-    source_id = _pick(k.traffic_sources(), body.source_id, "источник")
+    domain_id = _pick(await k.domains(), body.domain_id, "домен")
+    group_id = _pick(await k.groups(), body.group_id, "группа")
+    source_id = _pick(await k.traffic_sources(), body.source_id, "источник")
 
     name = (
         body.name
@@ -139,7 +142,7 @@ def create_campaign(
         else settings.campaign_prefix + body.name
     )
 
-    campaign = _create_campaign_with_retry(
+    campaign = await _create_campaign_with_retry(
         k,
         {
             "name": name,
@@ -156,12 +159,12 @@ def create_campaign(
     cid = campaign["id"]
 
     try:
-        k.create_stream(_geo_stream_payload(cid, body.geo))
-        k.create_stream(_offer_stream_payload(cid, body.offer_id))
+        await k.create_stream(_geo_stream_payload(cid, body.geo))
+        await k.create_stream(_offer_stream_payload(cid, body.offer_id))
     except Exception as stream_error:
         logger.warning("stream creation failed for campaign %s: %s", cid, stream_error)
         try:
-            k.delete_campaign(cid)
+            await k.delete_campaign(cid)
         except Exception as cleanup_error:
             logger.warning(
                 "campaign %s created in Keitaro but cleanup failed: %s",
@@ -186,11 +189,11 @@ def create_campaign(
             idempotency_key=idempotency_key,
         )
         db.add(rec)
-        db.commit()
+        await db.commit()
     except Exception as db_error:
         logger.exception("failed to persist campaign %s", cid)
         try:
-            k.delete_campaign(cid)
+            await k.delete_campaign(cid)
         except Exception as cleanup_error:
             logger.warning(
                 "campaign %s created in Keitaro but cleanup failed: %s",
@@ -209,13 +212,14 @@ def create_campaign(
 
 
 @router.get("/campaigns")
-def list_campaigns(
+async def list_campaigns(
     db: DbSession,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
 ) -> list[CampaignListItem]:
-    rows = db.scalars(
+    result = await db.execute(
         select(CampaignRecord).order_by(CampaignRecord.id.desc()).limit(limit)
-    ).all()
+    )
+    rows = result.scalars().all()
     return [
         CampaignListItem(
             id=r.keitaro_id, name=r.name, geo=r.geo, created_at=r.created_at

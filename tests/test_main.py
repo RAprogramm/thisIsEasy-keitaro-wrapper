@@ -24,19 +24,21 @@ def test_static_files_are_mounted(client: TestClient) -> None:
     assert client.get("/static/index.html").status_code == 200
 
 
-def test_get_db_yields_and_closes_a_session() -> None:
-    generator = get_db()
-    session = next(generator)
+@pytest.mark.anyio
+async def test_get_db_yields_and_closes_a_session() -> None:
+    agen = get_db()
+    session = await agen.__anext__()
     assert session is not None
-    with pytest.raises(StopIteration):
-        next(generator)
+    with pytest.raises(StopAsyncIteration):
+        await agen.__anext__()
 
 
-def test_get_db_rolls_back_when_the_request_fails() -> None:
-    generator = get_db()
-    next(generator)
+@pytest.mark.anyio
+async def test_get_db_rolls_back_when_the_request_fails() -> None:
+    agen = get_db()
+    await agen.__anext__()
     with pytest.raises(RuntimeError, match="boom"):
-        generator.throw(RuntimeError("boom"))
+        await agen.athrow(RuntimeError("boom"))
 
 
 def test_campaign_cascade_deletes_changes(db: Session) -> None:

@@ -153,30 +153,21 @@ def test_idempotency_key_returns_existing_campaign(
 def test_create_compensates_on_db_failure(
     client: TestClient, fake: FakeKeitaro
 ) -> None:
-    from tests.conftest import TestSession
+    from sqlalchemy.ext.asyncio import AsyncSession
 
-    class BoomSession:
-        def __init__(self, real: object) -> None:
-            self._real = real
+    from tests.conftest import AsyncTestSession
 
-        def add(self, obj: object) -> None:
-            self._real.add(obj)  # type: ignore[attr-defined]
-
-        def commit(self) -> None:
+    class BoomSession(AsyncSession):
+        async def commit(self) -> None:
             raise RuntimeError("db down")
 
-        def rollback(self) -> None:
-            self._real.rollback()  # type: ignore[attr-defined]
-
-        def close(self) -> None:
-            self._real.close()  # type: ignore[attr-defined]
-
-        def __getattr__(self, name: str) -> object:
-            return getattr(self._real, name)
-
-    def override_db() -> object:
-        real = TestSession()
-        yield BoomSession(real)
+    async def override_db() -> object:
+        real = AsyncTestSession()
+        session = BoomSession(bind=real.bind)
+        try:
+            yield session
+        finally:
+            await session.close()
 
     from app.db import get_db
     from app.main import app as fastapi_app
