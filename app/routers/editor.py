@@ -303,6 +303,7 @@ def add_offer(
         )
     db.commit()
     _log(db, campaign_id, body.offer_id, "add")
+    logger.info("added offer %s to campaign %s", body.offer_id, campaign_id)
 
     rows = _local_offers(db, campaign_id, sid)
     _rebalance(rows)
@@ -343,6 +344,7 @@ def remove_offer(
         _rebalance(rows)
         db.commit()
         _log(db, campaign_id, offer_id, "remove")
+        logger.info("removed offer %s from campaign %s", offer_id, campaign_id)
     return get_campaign(campaign_id, k, db)
 
 
@@ -368,6 +370,7 @@ def restore_offer(
     _rebalance(rows)
     db.commit()
     _log(db, campaign_id, offer_id, "add")
+    logger.info("restored offer %s in campaign %s", offer_id, campaign_id)
     return get_campaign(campaign_id, k, db)
 
 
@@ -391,6 +394,9 @@ def pin_offer(
     target.pinned = pinned
     _rebalance(rows)
     db.commit()
+    logger.info(
+        "pinned state changed for offer %s in campaign %s", offer_id, campaign_id
+    )
     return get_campaign(campaign_id, k, db)
 
 
@@ -420,6 +426,7 @@ def push_stream(
         r.published_share = r.share
         r.published_pinned = r.pinned
     db.commit()
+    logger.info("pushed stream %s of campaign %s", stream_id, campaign_id)
     return get_campaign(campaign_id, k, db)
 
 
@@ -446,5 +453,8 @@ def cancel_stream(
             r.share = r.published_share
             r.pinned = r.published_pinned
     db.commit()
+    logger.info(
+        "cancelled staged changes for stream %s of campaign %s", stream_id, campaign_id
+    )
     _sync_stream(db, campaign_id, sid, stream.get("offers", []))
     return get_campaign(campaign_id, k, db)

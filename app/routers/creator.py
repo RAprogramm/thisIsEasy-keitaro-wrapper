@@ -165,6 +165,7 @@ def create_campaign(
     )
     db.add(rec)
     db.commit()
+    logger.info("created campaign %s (geo=%s, offer=%s)", cid, body.geo, body.offer_id)
     return CampaignCreated(
         id=cid,
         name=name,

@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     google_url: str = "https://www.google.com"
     # Lifetime of the cached /api/dictionaries response, in seconds.
     dictionaries_ttl: float = 60.0
+    # Logging verbosity: DEBUG, INFO, WARNING, ERROR.
+    log_level: str = "INFO"
 
 
 settings = Settings()
