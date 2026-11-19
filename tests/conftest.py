@@ -1,0 +1,158 @@
+"""Shared fixtures: a fake Keitaro client, a test database, and a TestClient."""
+
+import os
+from collections.abc import Iterator
+from typing import Any
+
+os.environ.setdefault("DATABASE_URL", "postgresql+psycopg:///keitaro_test")
+os.environ.setdefault("CAMPAIGN_PREFIX", "test_rozanov_")
+os.environ.setdefault("KEITARO_API_KEY", "test-key")
+
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session, sessionmaker
+
+from app import models  # noqa: F401  (registers the tables on Base)
+from app.db import Base, get_db
+from app.keitaro import get_client
+from app.main import app
+
+TEST_DB_URL = os.environ["DATABASE_URL"]
+
+engine = create_engine(TEST_DB_URL)
+TestSession = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _create_schema() -> Iterator[None]:
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    yield
+    Base.metadata.drop_all(engine)
+
+
+@pytest.fixture(autouse=True)
+def _clean_tables() -> Iterator[None]:
+    yield
+    with engine.begin() as conn:
+        for table in reversed(Base.metadata.sorted_tables):
+            conn.execute(table.delete())
+
+
+@pytest.fixture
+def db() -> Iterator[Session]:
+    session = TestSession()
+    try:
+        yield session
+    finally:
+        session.close()
+
+
+class FakeKeitaro:
+    """In-memory stand-in for KeitaroClient; records every call for assertions."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict[str, Any]]] = []
+        self.domains_list: list[dict[str, Any]] = [
+            {"id": 1, "name": "d1.com"},
+            {"id": 2, "name": "d2.com"},
+        ]
+        self.groups_list: list[dict[str, Any]] = [{"id": 10, "name": "g1"}]
+        self.sources_list: list[dict[str, Any]] = [{"id": 20, "name": "s1"}]
+        self.offers_list: list[dict[str, Any]] = [
+            {"id": 100, "name": "offer A"},
+            {"id": 200, "name": "offer B"},
+        ]
+        self.campaigns: dict[int, dict[str, Any]] = {}
+        self.streams: dict[int, list[dict[str, Any]]] = {}
+        self.report_rows: list[dict[str, Any]] = []
+        self.report_error: Exception | None = None
+        self._next_id = 1000
+
+    def _record(self, name: str, **kwargs: Any) -> None:
+        self.calls.append((name, kwargs))
+
+    def domains(self) -> list[dict[str, Any]]:
+        self._record("domains")
+        return self.domains_list
+
+    def groups(self) -> list[dict[str, Any]]:
+        self._record("groups")
+        return self.groups_list
+
+    def traffic_sources(self) -> list[dict[str, Any]]:
+        self._record("traffic_sources")
+        return self.sources_list
+
+    def offers(self) -> list[dict[str, Any]]:
+        self._record("offers")
+        return self.offers_list
+
+    def create_campaign(self, payload: dict[str, Any]) -> dict[str, Any]:
+        self._record("create_campaign", payload=payload)
+        cid = self._next_id
+        self._next_id += 1
+        campaign = {"id": cid, **payload}
+        self.campaigns[cid] = campaign
+        return campaign
+
+    def get_campaign(self, campaign_id: int) -> dict[str, Any]:
+        self._record("get_campaign", campaign_id=campaign_id)
+        return self.campaigns[campaign_id]
+
+    def campaign_streams(self, campaign_id: int) -> list[dict[str, Any]]:
+        self._record("campaign_streams", campaign_id=campaign_id)
+        return self.streams.get(campaign_id, [])
+
+    def create_stream(self, payload: dict[str, Any]) -> dict[str, Any]:
+        self._record("create_stream", payload=payload)
+        sid = self._next_id
+        self._next_id += 1
+        stream = {"id": sid, **payload}
+        self.streams.setdefault(payload["campaign_id"], []).append(stream)
+        return stream
+
+    def update_stream(self, stream_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        self._record("update_stream", stream_id=stream_id, payload=payload)
+        for stream in self.streams.values():
+            for existing in stream:
+                if existing["id"] == stream_id:
+                    existing.update(payload)
+                    return existing
+        raise AssertionError("stream not found")
+
+    def report(
+        self, campaign_id: int, grouping: list[str], interval: str = "today"
+    ) -> dict[str, Any]:
+        self._record(
+            "report", campaign_id=campaign_id, grouping=grouping, interval=interval
+        )
+        if self.report_error is not None:
+            raise self.report_error
+        return {"rows": self.report_rows, "total": len(self.report_rows)}
+
+
+@pytest.fixture
+def fake() -> FakeKeitaro:
+    return FakeKeitaro()
+
+
+@pytest.fixture
+def client(fake: FakeKeitaro) -> Iterator[TestClient]:
+    def _override_db() -> Iterator[Session]:
+        session = TestSession()
+        try:
+            yield session
+        finally:
+            session.close()
+
+    app.dependency_overrides[get_db] = _override_db
+    app.dependency_overrides[get_client] = lambda: fake
+    with TestClient(app) as test_client:
+        yield test_client
+    app.dependency_overrides.clear()
+
+
+def make_offer_stream(stream_id: int, offers: list[dict[str, Any]]) -> dict[str, Any]:
+    return {"id": stream_id, "name": "Offer", "schema": "landings", "offers": offers}
