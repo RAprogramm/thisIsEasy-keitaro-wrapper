@@ -33,6 +33,7 @@ jobs:
       - name: Dockerfile lint
         uses: docker://hadolint/hadolint:v2.15.1-alpine
         with:
+          entrypoint: /bin/hadolint
           args: Dockerfile
       - name: Dependency audit
         run: uv run --locked pip-audit --skip-editable

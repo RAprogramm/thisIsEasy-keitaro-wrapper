@@ -6,13 +6,16 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     UV_LINK_MODE=copy \
     UV_COMPILE_BYTECODE=1 \
-    UV_PYTHON_DOWNLOADS=never
+    UV_PYTHON_DOWNLOADS=never \
+    UV_CACHE_DIR=/app/.cache/uv
 
 COPY --from=ghcr.io/astral-sh/uv:0.13.9 /uv /uvx /bin/
 
 WORKDIR /app
 
-RUN groupadd --system --gid 10001 app && useradd --system --uid 10001 --gid 10001 --home-dir /app app
+RUN groupadd --system --gid 10001 app \
+    && useradd --system --uid 10001 --gid 10001 --home-dir /app --shell /usr/sbin/nologin app \
+    && chown 10001:10001 /app
 
 COPY --chown=10001:10001 pyproject.toml uv.lock README.md ./
 COPY --chown=10001:10001 alembic.ini ./
@@ -21,7 +24,8 @@ COPY --chown=10001:10001 app ./app
 
 USER 10001
 
-RUN uv sync --frozen --no-dev
+RUN --mount=type=cache,target=/app/.cache/uv,uid=10001,gid=10001 \
+    uv sync --frozen --no-dev
 
 ENV PATH="/app/.venv/bin:$PATH"
 
