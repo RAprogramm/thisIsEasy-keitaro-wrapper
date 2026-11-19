@@ -9,6 +9,7 @@ os.environ.setdefault("CAMPAIGN_PREFIX", "test_rozanov_")
 os.environ.setdefault("KEITARO_API_KEY", "test-key")
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -68,6 +69,10 @@ class FakeKeitaro:
         self.streams: dict[int, list[dict[str, Any]]] = {}
         self.report_rows: list[dict[str, Any]] = []
         self.report_error: Exception | None = None
+        self.create_campaign_failures: list[HTTPException] = []
+        self.create_stream_failures: list[Exception] = []
+        self.delete_campaign_failures: list[HTTPException] = []
+        self.deleted_campaigns: list[int] = []
         self._next_id = 1000
 
     def _record(self, name: str, **kwargs: Any) -> None:
@@ -91,11 +96,20 @@ class FakeKeitaro:
 
     def create_campaign(self, payload: dict[str, Any]) -> dict[str, Any]:
         self._record("create_campaign", payload=payload)
+        if self.create_campaign_failures:
+            raise self.create_campaign_failures.pop(0)
         cid = self._next_id
         self._next_id += 1
         campaign = {"id": cid, **payload}
         self.campaigns[cid] = campaign
         return campaign
+
+    def delete_campaign(self, campaign_id: int) -> dict[str, Any] | None:
+        self._record("delete_campaign", campaign_id=campaign_id)
+        if self.delete_campaign_failures:
+            raise self.delete_campaign_failures.pop(0)
+        self.deleted_campaigns.append(campaign_id)
+        return self.campaigns.pop(campaign_id, None)
 
     def get_campaign(self, campaign_id: int) -> dict[str, Any]:
         self._record("get_campaign", campaign_id=campaign_id)
@@ -107,6 +121,8 @@ class FakeKeitaro:
 
     def create_stream(self, payload: dict[str, Any]) -> dict[str, Any]:
         self._record("create_stream", payload=payload)
+        if self.create_stream_failures:
+            raise self.create_stream_failures.pop(0)
         sid = self._next_id
         self._next_id += 1
         stream = {"id": sid, **payload}
@@ -123,7 +139,7 @@ class FakeKeitaro:
         raise AssertionError("stream not found")
 
     def report(
-        self, campaign_id: int, grouping: list[str], interval: str = "today"
+        self, campaign_id: int, grouping: list[str], interval: str
     ) -> dict[str, Any]:
         self._record(
             "report", campaign_id=campaign_id, grouping=grouping, interval=interval

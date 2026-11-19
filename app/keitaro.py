@@ -9,17 +9,23 @@ from .config import settings
 
 
 class KeitaroClient:
-    """Minimal synchronous client over the Keitaro Admin API v1."""
+    """Minimal synchronous client over the Keitaro Admin API v1.
+
+    Wraps a persistent ``httpx.Client`` so connections are reused between calls.
+    """
 
     def __init__(self, base_url: str | None = None, api_key: str | None = None) -> None:
         self.base = (base_url or settings.keitaro_url).rstrip("/") + "/admin_api/v1"
         self.headers = {"Api-Key": api_key or settings.keitaro_api_key}
+        self._client = httpx.Client(
+            base_url=self.base,
+            headers=self.headers,
+            timeout=settings.keitaro_timeout,
+        )
 
     def _request(self, method: str, path: str, **kwargs: Any) -> Any:
         try:
-            r = httpx.request(
-                method, self.base + path, headers=self.headers, timeout=30, **kwargs
-            )
+            r = self._client.request(method, path, **kwargs)
         except httpx.HTTPError as e:
             raise HTTPException(502, f"Keitaro недоступен: {e}") from e
         if r.status_code >= 400:
@@ -46,6 +52,9 @@ class KeitaroClient:
     def get_campaign(self, campaign_id: int) -> Any:
         return self._request("GET", f"/campaigns/{campaign_id}")
 
+    def delete_campaign(self, campaign_id: int) -> Any:
+        return self._request("DELETE", f"/campaigns/{campaign_id}")
+
     def campaign_streams(self, campaign_id: int) -> Any:
         return self._request("GET", f"/campaigns/{campaign_id}/streams")
 
@@ -56,9 +65,7 @@ class KeitaroClient:
         return self._request("PUT", f"/streams/{stream_id}", json=payload)
 
     # --- statistics ---
-    def report(
-        self, campaign_id: int, grouping: list[str], interval: str = "today"
-    ) -> Any:
+    def report(self, campaign_id: int, grouping: list[str], interval: str) -> Any:
         body = {
             "range": {"interval": interval},
             "dimensions": grouping,
@@ -77,5 +84,12 @@ class KeitaroClient:
         return self._request("POST", "/report/build", json=body)
 
 
+_client: KeitaroClient | None = None
+
+
 def get_client() -> KeitaroClient:
-    return KeitaroClient()
+    """Return the process-wide client so its connection pool is shared."""
+    global _client
+    if _client is None:
+        _client = KeitaroClient()
+    return _client

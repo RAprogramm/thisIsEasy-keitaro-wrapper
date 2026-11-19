@@ -21,6 +21,7 @@ def test_default_client_uses_settings() -> None:
     client = get_client()
     assert client.base.endswith("/admin_api/v1")
     assert client.headers["Api-Key"]
+    assert get_client() is client
 
 
 @respx.mock
@@ -98,6 +99,14 @@ def test_stream_writes(kc: KeitaroClient) -> None:
     )
     assert kc.create_stream({"a": 1}) == {"id": 1}
     assert kc.update_stream(1, {"b": 2}) == {"id": 1}
+
+
+@respx.mock
+def test_delete_campaign(kc: KeitaroClient) -> None:
+    respx.delete(f"{BASE}/campaigns/4").mock(
+        return_value=httpx.Response(200, json={"id": 4})
+    )
+    assert kc.delete_campaign(4) == {"id": 4}
 
 
 @respx.mock
