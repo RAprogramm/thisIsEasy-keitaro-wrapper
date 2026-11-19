@@ -41,6 +41,7 @@ extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Body"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101"]
+"app/__main__.py" = ["S104"]
 
 [tool.ruff.format]
 docstring-code-format = true
@@ -50,6 +51,9 @@ strict = true
 addopts = "--disable-socket --allow-hosts=127.0.0.1,::1 --allow-unix-socket"
 testpaths = ["tests"]
 pythonpath = ["."]
+
+[tool.coverage.run]
+omit = ["app/__main__.py"]
 
 [tool.coverage.report]
 exclude_also = [

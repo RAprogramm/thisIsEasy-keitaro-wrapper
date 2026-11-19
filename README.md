@@ -30,6 +30,8 @@ uv run uvicorn app.main:app --reload
 
 Open http://localhost:8000, Swagger at http://localhost:8000/docs.
 
+Shortcut: `make run` (runs `python -m app`) after `make migrate`.
+
 Without uv: `pip install -r requirements.txt` (pinned runtime dependencies) and run the
 same commands without the `uv run` prefix.
 
