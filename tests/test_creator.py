@@ -74,3 +74,8 @@ def test_list_campaigns(client: TestClient, fake: FakeKeitaro) -> None:
     assert len(rows) == 1
     assert rows[0]["geo"] == "US"
     assert rows[0]["name"] == "test_rozanov_c1"
+
+
+def test_list_campaigns_validates_limit(client: TestClient) -> None:
+    assert client.get("/api/campaigns", params={"limit": 0}).status_code == 422
+    assert client.get("/api/campaigns", params={"limit": 501}).status_code == 422

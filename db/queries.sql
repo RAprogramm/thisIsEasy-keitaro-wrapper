@@ -1,7 +1,7 @@
 -- Queries issued by the application through SQLAlchemy (parameter values inlined).
 
 -- GET /api/campaigns: list campaigns created through the service.
-SELECT id, keitaro_id, name, geo, created_at FROM campaigns ORDER BY id DESC;
+SELECT id, keitaro_id, name, geo, created_at FROM campaigns ORDER BY id DESC LIMIT 100;
 
 -- POST /api/campaigns: store a newly created campaign.
 INSERT INTO campaigns (keitaro_id, name, geo, offer_id, domain_id, group_id, source_id)

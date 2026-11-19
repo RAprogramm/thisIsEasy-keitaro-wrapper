@@ -1,7 +1,7 @@
 import secrets
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from ..config import settings
@@ -124,8 +124,13 @@ def create_campaign(
 
 
 @router.get("/campaigns")
-def list_campaigns(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
-    rows = db.query(CampaignRecord).order_by(CampaignRecord.id.desc()).all()
+def list_campaigns(
+    db: Session = Depends(get_db),
+    limit: int = Query(default=100, ge=1, le=500),
+) -> list[dict[str, Any]]:
+    rows = (
+        db.query(CampaignRecord).order_by(CampaignRecord.id.desc()).limit(limit).all()
+    )
     return [
         {
             "id": r.keitaro_id,
