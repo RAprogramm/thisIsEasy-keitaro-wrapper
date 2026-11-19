@@ -54,6 +54,10 @@ same commands without the `uv run` prefix.
 | GET | `/api/campaigns/{id}` | campaign, its streams, offers and statistics |
 | POST | `/api/campaigns/{id}/offers` | `{offer_id, stream_id?}` — add an offer |
 | DELETE | `/api/campaigns/{id}/offers/{offer_id}` | remove an offer |
+| POST | `/api/campaigns/{id}/offers/{offer_id}/restore` | bring an archived offer back |
+| POST | `/api/campaigns/{id}/offers/{offer_id}/pin` | `?pinned=true|false` — pin an offer's share |
+| POST | `/api/campaigns/{id}/push` | publish staged changes to Keitaro |
+| POST | `/api/campaigns/{id}/cancel` | discard staged changes |
 | GET | `/healthz` | liveness probe for deploy and monitoring |
 
 ## How it works
@@ -67,6 +71,12 @@ The editor reads the campaign streams, finds the offer stream (`schema: landings
 rewrites its offer list with a partial `PUT /streams/{id}`. Shares are split evenly; the
 remainder of the division goes to the first offer. Per-offer numbers come from
 `POST /report/build` grouped by `offer_id`, all time.
+
+Edits are staged locally: adding or removing an offer makes the stream "unpublished"
+(yellow) and rebalances shares without touching Keitaro. `Опубликовать` pushes the staged
+state, `Отменить` discards it. Removed offers stay in the wrapper as an archive with
+`Вернуть`; offers deleted directly in Keitaro are marked as archived on the next load.
+Weights can be pinned so they survive rebalancing.
 
 The local database stores only what this service itself produces: `campaigns` (created
 through the creator) and `offer_changes` (the add/remove journal). Campaign configuration
@@ -103,7 +113,7 @@ and statistics live in Keitaro and are never duplicated.
 
 ```bash
 uv sync
-uv run pytest --cov=app --cov-fail-under=100   # 58 tests, ~0.5 s
+uv run pytest --cov=app --cov-fail-under=100   # 77 tests, ~1 s
 uv run ruff check . && uv run ruff format --check .
 uv run mypy app tests alembic
 uv run alembic upgrade head && uv run alembic check   # migrations match the models
