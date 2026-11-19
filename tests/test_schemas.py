@@ -21,6 +21,11 @@ def test_geo_rejects_wrong_length() -> None:
         CampaignCreate(name="c", geo="USA", offer_id=1)
 
 
+def test_geo_rejects_unknown_country() -> None:
+    with pytest.raises(ValidationError):
+        CampaignCreate(name="c", geo="QQ", offer_id=1)
+
+
 def test_name_is_required() -> None:
     with pytest.raises(ValidationError):
         CampaignCreate.model_validate({"geo": "US", "offer_id": 1})

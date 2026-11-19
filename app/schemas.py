@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field, field_validator
 
+from .countries import ISO_ALPHA2
+
 
 class CampaignCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
@@ -18,6 +20,8 @@ class CampaignCreate(BaseModel):
         v = v.strip().upper()
         if not v.isalpha():
             raise ValueError("geo должен состоять из двух букв")
+        if v not in ISO_ALPHA2:
+            raise ValueError("неизвестный код страны ISO-3166")
         return v
 
 
