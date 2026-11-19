@@ -125,6 +125,7 @@ The code was drafted by AI coding assistants from the task specification. The mo
 took part:
 
 - **Qwen3.8 Flash Next**
+- **MiMo-V2.6-Flash**
 
 The author reviewed every change and verified the result against the live Keitaro test
 tracker: campaign creation, stream inspection, editor guards and partial stream updates.
