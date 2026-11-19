@@ -1,0 +1,81 @@
+"""Thin client for the Keitaro Admin API v1 (Api-Key header)."""
+
+from typing import Any
+
+import httpx
+from fastapi import HTTPException
+
+from .config import settings
+
+
+class KeitaroClient:
+    """Minimal synchronous client over the Keitaro Admin API v1."""
+
+    def __init__(self, base_url: str | None = None, api_key: str | None = None) -> None:
+        self.base = (base_url or settings.keitaro_url).rstrip("/") + "/admin_api/v1"
+        self.headers = {"Api-Key": api_key or settings.keitaro_api_key}
+
+    def _request(self, method: str, path: str, **kwargs: Any) -> Any:
+        try:
+            r = httpx.request(
+                method, self.base + path, headers=self.headers, timeout=30, **kwargs
+            )
+        except httpx.HTTPError as e:
+            raise HTTPException(502, f"Keitaro недоступен: {e}") from e
+        if r.status_code >= 400:
+            raise HTTPException(r.status_code, f"Keitaro: {r.text[:500]}")
+        return r.json() if r.content else None
+
+    # --- dictionaries ---
+    def domains(self) -> Any:
+        return self._request("GET", "/domains")
+
+    def groups(self) -> Any:
+        return self._request("GET", "/groups", params={"type": "campaigns"})
+
+    def traffic_sources(self) -> Any:
+        return self._request("GET", "/traffic_sources")
+
+    def offers(self) -> Any:
+        return self._request("GET", "/offers")
+
+    # --- campaigns and streams ---
+    def create_campaign(self, payload: dict[str, Any]) -> Any:
+        return self._request("POST", "/campaigns", json=payload)
+
+    def get_campaign(self, campaign_id: int) -> Any:
+        return self._request("GET", f"/campaigns/{campaign_id}")
+
+    def campaign_streams(self, campaign_id: int) -> Any:
+        return self._request("GET", f"/campaigns/{campaign_id}/streams")
+
+    def create_stream(self, payload: dict[str, Any]) -> Any:
+        return self._request("POST", "/streams", json=payload)
+
+    def update_stream(self, stream_id: int, payload: dict[str, Any]) -> Any:
+        return self._request("PUT", f"/streams/{stream_id}", json=payload)
+
+    # --- statistics ---
+    def report(
+        self, campaign_id: int, grouping: list[str], interval: str = "today"
+    ) -> Any:
+        body = {
+            "range": {"interval": interval},
+            "dimensions": grouping,
+            "measures": [
+                "clicks",
+                "campaign_unique_clicks",
+                "conversions",
+                "revenue",
+                "cost",
+                "profit",
+            ],
+            "filters": [
+                {"name": "campaign_id", "operator": "EQUALS", "expression": campaign_id}
+            ],
+        }
+        return self._request("POST", "/report/build", json=body)
+
+
+def get_client() -> KeitaroClient:
+    return KeitaroClient()
