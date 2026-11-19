@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Keitaro wrapper</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --text:#1c2230; --muted:#6b7280; --accent:#2563eb; --danger:#dc2626; --ok:#16a34a; --border:#e5e7eb; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#12151c; --card:#1b2030; --text:#e6e9f0; --muted:#98a2b3; --border:#2a3144; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.5 system-ui,sans-serif; background:var(--bg); color:var(--text); }
+  main { max-width:960px; margin:0 auto; padding:24px 16px 64px; }
+  h1 { font-size:20px; margin:0 0 16px; }
+  nav { display:flex; gap:8px; margin-bottom:16px; }
+  nav button { padding:8px 16px; border:1px solid var(--border); background:var(--card); color:var(--text); border-radius:8px; cursor:pointer; }
+  nav button.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:20px; margin-bottom:16px; }
+  label { display:block; font-size:13px; color:var(--muted); margin:12px 0 4px; }
+  input, select { width:100%; padding:9px 10px; border:1px solid var(--border); border-radius:8px; background:var(--bg); color:var(--text); font:inherit; }
+  .row { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px; }
+  button.primary { margin-top:16px; padding:10px 18px; background:var(--accent); color:#fff; border:0; border-radius:8px; cursor:pointer; font:inherit; }
+  button.danger { padding:5px 10px; background:transparent; color:var(--danger); border:1px solid var(--danger); border-radius:6px; cursor:pointer; }
+  button:disabled { opacity:.5; cursor:wait; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th, td { text-align:right; padding:8px 6px; border-bottom:1px solid var(--border); }
+  th:first-child, td:first-child { text-align:left; }
+  th { color:var(--muted); font-weight:500; }
+  .msg { margin-top:12px; padding:10px 12px; border-radius:8px; font-size:14px; }
+  .msg.ok { background:rgba(22,163,74,.12); color:var(--ok); }
+  .msg.err { background:rgba(220,38,38,.12); color:var(--danger); }
+  .hidden { display:none; }
+  .muted { color:var(--muted); }
+  h2 { font-size:16px; margin:0 0 8px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Keitaro wrapper</h1>
+  <nav>
+    <button id="tab-create" class="active">Создать кампанию</button>
+    <button id="tab-edit">Редактор кампании</button>
+  </nav>
+
+  <section id="view-create" class="card">
+    <form id="create-form">
+      <div class="row">
+        <div><label>Название (префикс добавится сам)</label><input id="c-name" required placeholder="campaign1"></div>
+        <div><label>Гео (ISO-код)</label><input id="c-geo" required maxlength="2" placeholder="US"></div>
+        <div><label>Оффер</label><select id="c-offer" required></select></div>
+      </div>
+      <div class="row">
+        <div><label>Домен</label><select id="c-domain"></select></div>
+        <div><label>Группа</label><select id="c-group"></select></div>
+        <div><label>Источник</label><select id="c-source"></select></div>
+      </div>
+      <button class="primary" type="submit">Создать</button>
+      <div id="c-msg"></div>
+    </form>
+  </section>
+
+  <section id="view-edit" class="hidden">
+    <div class="card">
+      <div class="row">
+        <div><label>ID кампании в Keitaro</label><input id="e-id" type="number" min="1" placeholder="123"></div>
+        <div><label>Недавно созданные</label><select id="e-recent"><option value="">—</option></select></div>
+      </div>
+      <button class="primary" id="e-load">Загрузить</button>
+      <div id="e-msg"></div>
+    </div>
+    <div id="e-body"></div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let dict = { offers: [] };
+let currentCampaign = null;
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts });
+  const text = await r.text();
+  let data; try { data = JSON.parse(text); } catch { data = text; }
+  if (!r.ok) throw new Error((data && data.detail) || text || r.statusText);
+  return data;
+}
+function show(el, text, ok) { el.innerHTML = `<div class="msg ${ok ? 'ok' : 'err'}"></div>`; el.firstChild.textContent = text; }
+function fill(sel, items, withEmpty) {
+  sel.innerHTML = (withEmpty ? '<option value="">по умолчанию (первый)</option>' : '') +
+    items.map(i => `<option value="${i.id}">${i.name.replace(/</g,'&lt;')} (#${i.id})</option>`).join('');
+}
+
+function switchTab(name) {
+  for (const t of ['create', 'edit']) {
+    $('tab-' + t).classList.toggle('active', t === name);
+    $('view-' + t).classList.toggle('hidden', t !== name);
+  }
+  if (name === 'edit') loadRecent();
+}
+$('tab-create').onclick = () => switchTab('create');
+$('tab-edit').onclick = () => switchTab('edit');
+
+async function init() {
+  try {
+    dict = await api('/api/dictionaries');
+    fill($('c-offer'), dict.offers, false);
+    fill($('c-domain'), dict.domains, true);
+    fill($('c-group'), dict.groups, true);
+    fill($('c-source'), dict.sources, true);
+  } catch (e) { show($('c-msg'), 'Не удалось загрузить справочники Keitaro: ' + e.message, false); }
+}
+
+$('create-form').onsubmit = async (ev) => {
+  ev.preventDefault();
+  const btn = ev.submitter; btn.disabled = true;
+  const num = (v) => v ? Number(v) : null;
+  try {
+    const res = await api('/api/campaigns', { method: 'POST', body: JSON.stringify({
+      name: $('c-name').value.trim(), geo: $('c-geo').value.trim(), offer_id: Number($('c-offer').value),
+      domain_id: num($('c-domain').value), group_id: num($('c-group').value), source_id: num($('c-source').value),
+    })});
+    show($('c-msg'), `Кампания создана: «${res.name}», ID ${res.id}`, true);
+  } catch (e) { show($('c-msg'), e.message, false); }
+  btn.disabled = false;
+};
+
+async function loadRecent() {
+  try {
+    const list = await api('/api/campaigns');
+    $('e-recent').innerHTML = '<option value="">—</option>' + list.map(c => `<option value="${c.id}">${c.name} (#${c.id})</option>`).join('');
+  } catch {}
+}
+$('e-recent').onchange = () => { if ($('e-recent').value) $('e-id').value = $('e-recent').value; };
+$('e-load').onclick = () => loadCampaign(Number($('e-id').value));
+
+async function loadCampaign(id) {
+  if (!id) return show($('e-msg'), 'Введите ID кампании', false);
+  try {
+    currentCampaign = await api('/api/campaigns/' + id);
+    $('e-msg').innerHTML = '';
+    render();
+  } catch (e) { $('e-body').innerHTML = ''; show($('e-msg'), e.message, false); }
+}
+
+const fmt = (n) => (Number(n) || 0).toLocaleString('ru-RU', { maximumFractionDigits: 2 });
+
+function render() {
+  const c = currentCampaign;
+  let html = `<h2>${c.name.replace(/</g,'&lt;')} <span class="muted">#${c.id}</span></h2>`;
+  if (c.stats_error) html += `<div class="msg err">Статистика не загрузилась, цифры ниже недостоверны: ${c.stats_error.replace(/</g,'&lt;')}</div>`;
+  for (const s of c.streams) {
+    const isOffers = s.schema === 'landings';
+    html += `<div class="card"><strong>${(s.name || 'Поток').replace(/</g,'&lt;')}</strong> <span class="muted">· ${s.schema}</span>`;
+    if (!isOffers) { html += `<p class="muted">Редирект, офферов нет.</p></div>`; continue; }
+    html += `<table><thead><tr><th>Оффер</th><th>Доля, %</th><th>Клики</th><th>Уники</th><th>Конверсии</th><th>Доход</th><th>Расход</th><th>Профит</th><th></th></tr></thead><tbody>`;
+    for (const o of s.offers) {
+      const st = o.stats;
+      html += `<tr><td>${o.name.replace(/</g,'&lt;')} <span class="muted">#${o.offer_id}</span></td><td>${o.share}</td><td>${fmt(st.clicks)}</td><td>${fmt(st.unique_clicks)}</td><td>${fmt(st.conversions)}</td><td>${fmt(st.revenue)}</td><td>${fmt(st.cost)}</td><td>${fmt(st.profit)}</td>
+        <td><button class="danger" data-del="${o.offer_id}" data-stream="${s.id}">Удалить</button></td></tr>`;
+    }
+    const used = new Set(s.offers.map(o => o.offer_id));
+    const free = dict.offers.filter(o => !used.has(o.id));
+    html += `</tbody></table>
+      <div class="row" style="margin-top:12px;align-items:end">
+        <div><label>Добавить оффер</label><select id="add-sel-${s.id}">${free.map(o => `<option value="${o.id}">${o.name.replace(/</g,'&lt;')} (#${o.id})</option>`).join('')}</select></div>
+        <div><button class="primary" style="margin-top:0" data-add="${s.id}">Добавить</button></div>
+      </div></div>`;
+  }
+  $('e-body').innerHTML = html;
+  $('e-body').querySelectorAll('[data-del]').forEach(b => b.onclick = () => changeOffer('DELETE', b, b.dataset.del, b.dataset.stream));
+  $('e-body').querySelectorAll('[data-add]').forEach(b => b.onclick = () => changeOffer('POST', b, $('add-sel-' + b.dataset.add).value, b.dataset.add));
+}
+
+async function changeOffer(method, btn, offerId, streamId) {
+  if (!offerId) return;
+  btn.disabled = true;
+  const id = currentCampaign.id;
+  try {
+    currentCampaign = method === 'POST'
+      ? await api(`/api/campaigns/${id}/offers`, { method, body: JSON.stringify({ offer_id: Number(offerId), stream_id: Number(streamId) }) })
+      : await api(`/api/campaigns/${id}/offers/${offerId}?stream_id=${streamId}`, { method });
+    $('e-msg').innerHTML = '';
+    render();
+  } catch (e) { show($('e-msg'), e.message, false); btn.disabled = false; }
+}
+
+init();
+</script>
+</body>
+</html>
