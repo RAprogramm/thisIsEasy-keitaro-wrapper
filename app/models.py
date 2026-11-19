@@ -1,6 +1,7 @@
 from datetime import datetime
+from typing import Literal
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
@@ -30,11 +31,14 @@ class OfferChange(Base):
     """Log of offer additions and removals made in the editor."""
 
     __tablename__ = "offer_changes"
+    __table_args__ = (
+        CheckConstraint("action IN ('add', 'remove')", name="ck_offer_changes_action"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     campaign_id: Mapped[int] = mapped_column(ForeignKey("campaigns.id"), index=True)
     offer_id: Mapped[int] = mapped_column(Integer)
-    action: Mapped[str] = mapped_column(String(16))  # "add" | "remove"
+    action: Mapped[Literal["add", "remove"]] = mapped_column(String(16))
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     campaign: Mapped[CampaignRecord] = relationship(back_populates="changes")
