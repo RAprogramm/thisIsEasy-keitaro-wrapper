@@ -1,0 +1,60 @@
+[project]
+name = "keitaro-wrapper"
+version = "1.0.0"
+description = "FastAPI + SQLAlchemy wrapper around the Keitaro Admin API: campaign creator and offer editor"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "sqlalchemy",
+    "alembic",
+    "psycopg[binary]",
+    "httpx",
+    "pydantic",
+    "pydantic-settings",
+    "python-dotenv",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "pytest-socket",
+    "respx",
+    "ruff",
+    "mypy",
+]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "S"]
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Body"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]
+
+[tool.ruff.format]
+docstring-code-format = true
+
+[tool.pytest.ini_options]
+strict = true
+addopts = "--disable-socket --allow-hosts=127.0.0.1,::1 --allow-unix-socket"
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.coverage.report]
+exclude_also = [
+    'if __name__ == "__main__":',
+]
+
+[tool.mypy]
+strict = true
+python_version = "3.13"
