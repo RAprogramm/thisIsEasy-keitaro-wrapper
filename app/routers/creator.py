@@ -1,4 +1,7 @@
+"""Campaign creator endpoints: dictionaries and campaign creation."""
+
 import secrets
+from contextlib import suppress
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -21,6 +24,54 @@ def _pick(items: list[dict[str, Any]], wanted: int | None, label: str) -> int:
     if not items:
         raise HTTPException(400, f"В Keitaro нет ни одного значения для: {label}")
     return int(items[0]["id"])
+
+
+def _create_campaign_with_retry(k: KeitaroClient, payload: dict[str, Any]) -> Any:
+    """Create the campaign, retrying when Keitaro rejects a colliding alias."""
+    remaining = 3
+    while True:
+        remaining -= 1
+        try:
+            return k.create_campaign({**payload, "alias": secrets.token_hex(6)})
+        except HTTPException as e:
+            if remaining == 0 or "alias" not in str(e.detail).lower():
+                raise
+
+
+def _geo_stream_payload(campaign_id: int, geo: str) -> dict[str, Any]:
+    """Stream that redirects visitors from the target country to Google."""
+    return {
+        "campaign_id": campaign_id,
+        "name": f"{geo} -> Google",
+        "type": "regular",
+        "position": 1,
+        "weight": 100,
+        "state": "active",
+        "collect_clicks": True,
+        "schema": "redirect",
+        "action_type": "http",
+        "action_payload": settings.google_url,
+        "filter_or": False,
+        "filters": [{"name": "country", "mode": "accept", "payload": [geo]}],
+    }
+
+
+def _offer_stream_payload(campaign_id: int, offer_id: int) -> dict[str, Any]:
+    """Catch-all stream that serves the chosen offer to everyone else."""
+    return {
+        "campaign_id": campaign_id,
+        "name": "Offer",
+        "type": "regular",
+        "position": 2,
+        "weight": 100,
+        "state": "active",
+        "collect_clicks": True,
+        "schema": "landings",
+        "action_type": "http",
+        "filter_or": False,
+        "filters": [],
+        "offers": [{"offer_id": offer_id, "share": 100, "state": "active"}],
+    }
 
 
 @router.get("/dictionaries")
@@ -54,10 +105,10 @@ def create_campaign(
         else settings.campaign_prefix + body.name
     )
 
-    campaign = k.create_campaign(
+    campaign = _create_campaign_with_retry(
+        k,
         {
             "name": name,
-            "alias": secrets.token_hex(4),
             "type": "position",
             "state": "active",
             "domain_id": domain_id,
@@ -66,42 +117,17 @@ def create_campaign(
             "cost_type": "CPC",
             "cost_value": 0,
             "cost_currency": "USD",
-        }
+        },
     )
     cid = campaign["id"]
 
-    k.create_stream(
-        {
-            "campaign_id": cid,
-            "name": f"{body.geo} -> Google",
-            "type": "regular",
-            "position": 1,
-            "weight": 100,
-            "state": "active",
-            "collect_clicks": True,
-            "schema": "redirect",
-            "action_type": "http",
-            "action_payload": settings.google_url,
-            "filter_or": False,
-            "filters": [{"name": "country", "mode": "accept", "payload": [body.geo]}],
-        }
-    )
-    k.create_stream(
-        {
-            "campaign_id": cid,
-            "name": "Offer",
-            "type": "regular",
-            "position": 2,
-            "weight": 100,
-            "state": "active",
-            "collect_clicks": True,
-            "schema": "landings",
-            "action_type": "http",
-            "filter_or": False,
-            "filters": [],
-            "offers": [{"offer_id": body.offer_id, "share": 100, "state": "active"}],
-        }
-    )
+    try:
+        k.create_stream(_geo_stream_payload(cid, body.geo))
+        k.create_stream(_offer_stream_payload(cid, body.offer_id))
+    except HTTPException:
+        with suppress(HTTPException):
+            k.delete_campaign(cid)
+        raise
 
     rec = CampaignRecord(
         keitaro_id=cid,

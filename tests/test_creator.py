@@ -1,5 +1,6 @@
 """Integration tests for the campaign creator endpoints."""
 
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from tests.conftest import FakeKeitaro
@@ -79,3 +80,44 @@ def test_list_campaigns(client: TestClient, fake: FakeKeitaro) -> None:
 def test_list_campaigns_validates_limit(client: TestClient) -> None:
     assert client.get("/api/campaigns", params={"limit": 0}).status_code == 422
     assert client.get("/api/campaigns", params={"limit": 501}).status_code == 422
+
+
+def test_alias_collision_is_retried(client: TestClient, fake: FakeKeitaro) -> None:
+    fake.create_campaign_failures = [
+        HTTPException(400, "Keitaro: alias X already used")
+    ]
+    r = client.post("/api/campaigns", json={"name": "c1", "geo": "US", "offer_id": 100})
+    assert r.status_code == 201
+    assert sum(c[0] == "create_campaign" for c in fake.calls) == 2
+
+
+def test_alias_retries_are_exhausted(client: TestClient, fake: FakeKeitaro) -> None:
+    fake.create_campaign_failures = [HTTPException(400, "alias X used")] * 3
+    r = client.post("/api/campaigns", json={"name": "c1", "geo": "US", "offer_id": 100})
+    assert r.status_code == 400
+    assert sum(c[0] == "create_campaign" for c in fake.calls) == 3
+
+
+def test_non_alias_error_is_not_retried(client: TestClient, fake: FakeKeitaro) -> None:
+    fake.create_campaign_failures = [HTTPException(400, "name is required")]
+    r = client.post("/api/campaigns", json={"name": "c1", "geo": "US", "offer_id": 100})
+    assert r.status_code == 400
+    assert sum(c[0] == "create_campaign" for c in fake.calls) == 1
+
+
+def test_stream_failure_deletes_the_campaign(
+    client: TestClient, fake: FakeKeitaro
+) -> None:
+    fake.create_stream_failures = [HTTPException(502, "boom")]
+    r = client.post("/api/campaigns", json={"name": "c1", "geo": "US", "offer_id": 100})
+    assert r.status_code == 502
+    assert fake.deleted_campaigns == [1000]
+
+
+def test_cleanup_failure_keeps_the_original_error(
+    client: TestClient, fake: FakeKeitaro
+) -> None:
+    fake.create_stream_failures = [HTTPException(502, "boom")]
+    fake.delete_campaign_failures = [HTTPException(404, "gone")]
+    r = client.post("/api/campaigns", json={"name": "c1", "geo": "US", "offer_id": 100})
+    assert r.status_code == 502
