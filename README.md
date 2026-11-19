@@ -54,6 +54,7 @@ same commands without the `uv run` prefix.
 | GET | `/api/campaigns/{id}` | campaign, its streams, offers and statistics |
 | POST | `/api/campaigns/{id}/offers` | `{offer_id, stream_id?}` — add an offer |
 | DELETE | `/api/campaigns/{id}/offers/{offer_id}` | remove an offer |
+| GET | `/healthz` | liveness probe for deploy and monitoring |
 
 ## How it works
 
@@ -90,6 +91,8 @@ and statistics live in Keitaro and are never duplicated.
 
 ## Limitations
 
+- **No authentication.** Anyone who can reach the port can create and modify campaigns
+  in Keitaro; run it on a trusted network or behind a reverse proxy that adds auth.
 - The editor targets the first `landings` stream of a campaign unless `stream_id` is
   given; campaigns with several offer streams need the explicit ID.
 - Statistics are all-time only; there is no date-range picker.
@@ -100,16 +103,21 @@ and statistics live in Keitaro and are never duplicated.
 
 ```bash
 uv sync
-uv run pytest --cov=app --cov-fail-under=100   # 53 tests, ~0.4 s
+uv run pytest --cov=app --cov-fail-under=100   # 58 tests, ~0.5 s
 uv run ruff check . && uv run ruff format --check .
-uv run mypy app tests
+uv run mypy app tests alembic
+uv run alembic upgrade head && uv run alembic check   # migrations match the models
 ```
 
 Tests never touch the Keitaro network: HTTP is mocked with `respx`, endpoints run against
-an in-process `FakeKeitaro`, and `pytest-socket` blocks all external sockets. Tests use a
-local PostgreSQL database (`keitaro_test`); CI runs them against a `postgres:17` service.
+an in-process `FakeKeitaro`, and `pytest-socket` blocks all external sockets. Tests use
+the database from `TEST_DATABASE_URL` (default `postgresql+psycopg:///keitaro_test`) and
+never read `DATABASE_URL`, so a stray environment variable cannot point them at the
+working database; CI runs them against a `postgres:17` service. CI also applies all
+migrations to a fresh database and fails on any drift between them and the models.
 `db/schema.sql` and `db/queries.sql` mirror the ORM schema and the queries the app issues;
 CI analyzes them with [sql-query-analyzer](https://github.com/RAprogramm/sql-query-analyzer).
+CI also re-exports `requirements.txt` from `uv.lock` and fails if the two have drifted.
 
 ## AI usage
 
