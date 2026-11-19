@@ -11,7 +11,7 @@ The frontend is a single HTML page served by the same app — no build step.
 
 ## Requirements
 
-- Python 3.13+
+- Python 3.13+ (tested on 3.13, 3.14, 3.15)
 - PostgreSQL 14+ (tested on 17)
 - [uv](https://docs.astral.sh/uv/) (recommended) or pip
 
@@ -39,6 +39,7 @@ same commands without the `uv run` prefix.
 |---|---|
 | `KEITARO_URL` | tracker URL, defaults to `https://tlgk.host` |
 | `KEITARO_API_KEY` | API key (never commit it) |
+| `KEITARO_TIMEOUT` | per-request timeout in seconds, default `30` |
 | `DATABASE_URL` | SQLAlchemy connection string, default `postgresql+psycopg:///keitaro` |
 | `CAMPAIGN_PREFIX` | campaign name prefix, `test_surname_` |
 | `GOOGLE_URL` | where the "geo → Google" stream redirects to |
@@ -99,7 +100,7 @@ and statistics live in Keitaro and are never duplicated.
 
 ```bash
 uv sync
-uv run pytest --cov=app --cov-fail-under=100   # 44 tests, ~0.3 s
+uv run pytest --cov=app --cov-fail-under=100   # 53 tests, ~0.4 s
 uv run ruff check . && uv run ruff format --check .
 uv run mypy app tests
 ```
