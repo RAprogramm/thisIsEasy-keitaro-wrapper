@@ -86,6 +86,16 @@ def test_add_offer_unknown_stream(client: TestClient, fake: FakeKeitaro) -> None
     assert r.status_code == 404
 
 
+def test_add_offer_to_redirect_stream_is_rejected(
+    client: TestClient, fake: FakeKeitaro
+) -> None:
+    seed_campaign(fake)
+    r = client.post(
+        "/api/campaigns/1000/offers", json={"offer_id": 200, "stream_id": 1}
+    )
+    assert r.status_code == 400
+
+
 def test_add_offer_without_offer_stream(client: TestClient, fake: FakeKeitaro) -> None:
     fake.campaigns[1000] = {"id": 1000, "name": "camp"}
     fake.streams[1000] = [{"id": 1, "name": "r", "schema": "redirect", "offers": []}]

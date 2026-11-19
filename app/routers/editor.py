@@ -17,6 +17,8 @@ def _offer_stream(
     if stream_id is not None:
         for s in streams:
             if s["id"] == stream_id:
+                if s.get("schema") != "landings":
+                    raise HTTPException(400, "Поток не принимает офферы")
                 return s
         raise HTTPException(404, "Поток не найден")
     for s in streams:
