@@ -126,3 +126,67 @@ def test_cleanup_failure_keeps_the_original_error(
         )
     assert r.status_code == 502
     assert "cleanup failed" in caplog.text
+
+
+def test_idempotency_key_returns_existing_campaign(
+    client: TestClient, fake: FakeKeitaro
+) -> None:
+    headers = {"Idempotency-Key": "key-1"}
+    r1 = client.post(
+        "/api/campaigns",
+        json={"name": "c1", "geo": "US", "offer_id": 100},
+        headers=headers,
+    )
+    assert r1.status_code == 201
+    cid = r1.json()["id"]
+    # second call with same key must not create a new campaign
+    r2 = client.post(
+        "/api/campaigns",
+        json={"name": "c2", "geo": "DE", "offer_id": 200},
+        headers=headers,
+    )
+    assert r2.status_code == 201
+    assert r2.json()["id"] == cid
+    assert len(fake.campaigns) == 1
+
+
+def test_create_compensates_on_db_failure(
+    client: TestClient, fake: FakeKeitaro
+) -> None:
+    from tests.conftest import TestSession
+
+    class BoomSession:
+        def __init__(self, real: object) -> None:
+            self._real = real
+
+        def add(self, obj: object) -> None:
+            self._real.add(obj)  # type: ignore[attr-defined]
+
+        def commit(self) -> None:
+            raise RuntimeError("db down")
+
+        def rollback(self) -> None:
+            self._real.rollback()  # type: ignore[attr-defined]
+
+        def close(self) -> None:
+            self._real.close()  # type: ignore[attr-defined]
+
+        def __getattr__(self, name: str) -> object:
+            return getattr(self._real, name)
+
+    def override_db() -> object:
+        real = TestSession()
+        yield BoomSession(real)
+
+    from app.db import get_db
+    from app.main import app as fastapi_app
+
+    fake.delete_campaign_failures.append(HTTPException(404, "gone"))
+    fastapi_app.dependency_overrides[get_db] = override_db
+    try:
+        r = client.post(
+            "/api/campaigns", json={"name": "c1", "geo": "US", "offer_id": 100}
+        )
+    finally:
+        fastapi_app.dependency_overrides.pop(get_db, None)
+    assert r.status_code == 500

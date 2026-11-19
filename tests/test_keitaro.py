@@ -156,3 +156,73 @@ def test_report_builds_body(kc: KeitaroClient) -> None:
     assert body["filters"] == [
         {"name": "campaign_id", "operator": "EQUALS", "expression": 7}
     ]
+
+
+def test_retries_on_transient_status_then_succeeds(kc: KeitaroClient) -> None:
+    sleeps: list[float] = []
+    kc._sleep = lambda d: sleeps.append(float(d))
+    kc.MAX_ATTEMPTS = 3
+    responses = [
+        httpx.Response(503, text="busy"),
+        httpx.Response(200, json=[{"id": 1, "name": "g"}]),
+    ]
+    with respx.mock:
+        respx.get(f"{BASE}/groups").mock(side_effect=responses)
+        assert kc.groups() == [{"id": 1, "name": "g"}]
+    assert len(sleeps) == 1
+
+
+def test_retries_on_connect_error_then_succeeds(kc: KeitaroClient) -> None:
+    sleeps: list[float] = []
+    kc._sleep = lambda d: sleeps.append(float(d))
+    kc.MAX_ATTEMPTS = 3
+    with respx.mock:
+        respx.get(f"{BASE}/groups").mock(
+            side_effect=[httpx.ConnectError("boom"), httpx.Response(200, json=[])]
+        )
+        assert kc.groups() == []
+    assert len(sleeps) == 1
+
+
+def test_retries_respect_retry_after(kc: KeitaroClient) -> None:
+    sleeps: list[float] = []
+    kc._sleep = lambda d: sleeps.append(float(d))
+    kc.MAX_ATTEMPTS = 2
+    with respx.mock:
+        respx.get(f"{BASE}/groups").mock(
+            side_effect=[
+                httpx.Response(429, text="slow", headers={"Retry-After": "0.5"}),
+                httpx.Response(200, json=[]),
+            ]
+        )
+        assert kc.groups() == []
+    assert sleeps == [0.5]
+
+
+def test_raises_after_max_attempts(kc: KeitaroClient) -> None:
+    sleeps: list[float] = []
+    kc._sleep = lambda d: sleeps.append(float(d))
+    kc.MAX_ATTEMPTS = 2
+    with respx.mock:
+        respx.get(f"{BASE}/groups").mock(return_value=httpx.Response(503, text="busy"))
+        with pytest.raises(HTTPException) as exc:
+            kc.groups()
+    assert exc.value.status_code == 503
+    assert len(sleeps) == 1
+
+
+def test_retries_handle_invalid_retry_after(kc: KeitaroClient) -> None:
+    sleeps: list[float] = []
+    kc._sleep = lambda d: sleeps.append(float(d))
+    kc.MAX_ATTEMPTS = 2
+    with respx.mock:
+        respx.get(f"{BASE}/groups").mock(
+            side_effect=[
+                httpx.Response(
+                    429, text="slow", headers={"Retry-After": "not-a-number"}
+                ),
+                httpx.Response(200, json=[]),
+            ]
+        )
+        assert kc.groups() == []
+    assert sleeps == [0.0]

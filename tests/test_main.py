@@ -49,3 +49,25 @@ def test_campaign_cascade_deletes_changes(db: Session) -> None:
     db.delete(record)
     db.commit()
     assert db.scalar(select(func.count()).select_from(OfferChange)) == 0
+
+
+def test_rate_limit_returns_429(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient
+) -> None:
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "rate_limit_per_minute", 1)
+    # reset bucket
+    from app.main import _rate_limit_state
+
+    _rate_limit_state.clear()
+    r1 = client.post("/api/campaigns", json={"name": "c", "geo": "US", "offer_id": 100})
+    assert r1.status_code in (201, 400)
+    r2 = client.post("/api/campaigns", json={"name": "c", "geo": "US", "offer_id": 100})
+    assert r2.status_code == 429
+
+
+def test_readyz_returns_ok(client: TestClient) -> None:
+    r = client.get("/readyz")
+    assert r.status_code == 200
+    assert r.json()["status"] == "ready"

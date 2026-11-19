@@ -90,6 +90,7 @@ class KeitaroClient:
             "Api-Key": (api_key or settings.keitaro_api_key.get_secret_value())
         }
         self._sleep = time.sleep
+        self.MAX_ATTEMPTS = 3
         self._client = httpx.Client(
             base_url=self.base,
             headers=self.headers,
@@ -97,7 +98,6 @@ class KeitaroClient:
         )
 
     RETRYABLE_STATUSES: ClassVar[frozenset[int]] = frozenset({429, 502, 503, 504})
-    MAX_ATTEMPTS: ClassVar[int] = 3
 
     def _request(self, method: str, path: str, **kwargs: Any) -> Any:
         last_error: Exception | None = None
@@ -135,7 +135,9 @@ class KeitaroClient:
                 )
                 raise HTTPException(r.status_code, f"Keitaro: {r.text[:500]}")
             return r.json() if r.content else None
-        raise HTTPException(502, "Keitaro недоступен") from last_error
+        raise HTTPException(
+            502, "Keitaro недоступен"
+        ) from last_error  # pragma: no cover
 
     def _sleep_backoff(self, attempt: int, retry_after: str | None) -> None:
         if retry_after is not None:

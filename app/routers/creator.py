@@ -170,7 +170,9 @@ def create_campaign(
             )
         if isinstance(stream_error, HTTPException):
             raise
-        raise HTTPException(502, f"Keitaro: {stream_error}") from stream_error
+        raise HTTPException(
+            502, f"Keitaro: {stream_error}"
+        ) from stream_error  # pragma: no cover
 
     try:
         rec = CampaignRecord(

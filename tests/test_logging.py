@@ -1,18 +1,76 @@
 """Tests for application-level logging and error handling."""
 
+import json
 import logging
 
 import pytest
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
-from app.main import _configure_logging, unhandled_exception_handler
+from app.main import (
+    _configure_logging,
+    _JsonFormatter,
+    integrity_error_handler,
+    unhandled_exception_handler,
+)
+
+
+def test_json_formatter_emits_json() -> None:
+    formatter = _JsonFormatter()
+    record = logging.LogRecord(
+        name="app.test",
+        level=logging.INFO,
+        pathname=__file__,
+        lineno=1,
+        msg="hello %s",
+        args=("world",),
+        exc_info=None,
+    )
+    record.request_id = "rid-123"
+    out = formatter.format(record)
+    data = json.loads(out)
+    assert data["level"] == "INFO"
+    assert data["message"] == "hello world"
+    assert data["request_id"] == "rid-123"
+
+    # exc_info branch
+    try:
+        raise ValueError("boom")
+    except ValueError:
+        record2 = logging.LogRecord(
+            name="app.test",
+            level=logging.ERROR,
+            pathname=__file__,
+            lineno=1,
+            msg="err",
+            args=(),
+            exc_info=__import__("sys").exc_info(),
+        )
+        record2.request_id = "r2"
+        out2 = formatter.format(record2)
+        data2 = json.loads(out2)
+        assert "exc_info" in data2
+        assert "boom" in data2["exc_info"]
 
 
 def test_configure_logging_respects_existing_handlers() -> None:
     root = logging.getLogger()
-    assert root.handlers  # pytest installs handlers
-    _configure_logging()  # exercises the early-return branch
+    assert root.handlers
+    _configure_logging()
+
+
+@pytest.mark.anyio
+async def test_integrity_error_handler_returns_409(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    from sqlalchemy.exc import IntegrityError
+
+    request = Request({"type": "http", "method": "POST", "path": "/x", "headers": []})
+    exc = IntegrityError("stmt", {}, Exception("dup"))
+    with caplog.at_level(logging.WARNING, logger="app.main"):
+        response = await integrity_error_handler(request, exc)
+    assert response.status_code == 409
+    assert "integrity violation" in caplog.text
 
 
 @pytest.mark.anyio
