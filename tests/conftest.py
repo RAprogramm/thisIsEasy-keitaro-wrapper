@@ -4,7 +4,7 @@ import os
 from collections.abc import Iterator
 from typing import Any
 
-os.environ.setdefault("DATABASE_URL", "postgresql+psycopg:///keitaro_test")
+os.environ.setdefault("TEST_DATABASE_URL", "postgresql+psycopg:///keitaro_test")
 os.environ.setdefault("CAMPAIGN_PREFIX", "test_rozanov_")
 os.environ.setdefault("KEITARO_API_KEY", "test-key")
 
@@ -19,7 +19,7 @@ from app.db import Base, get_db
 from app.keitaro import get_client
 from app.main import app
 
-TEST_DB_URL = os.environ["DATABASE_URL"]
+TEST_DB_URL = os.environ["TEST_DATABASE_URL"]
 
 engine = create_engine(TEST_DB_URL)
 TestSession = sessionmaker(bind=engine, autoflush=False, autocommit=False)

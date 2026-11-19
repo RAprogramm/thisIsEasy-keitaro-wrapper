@@ -1,21 +1,22 @@
 """Integration tests for the campaign creator endpoints."""
 
+import logging
+
+import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from tests.conftest import FakeKeitaro
 
 
-def test_dictionaries(client: TestClient, fake: FakeKeitaro) -> None:
+def test_dictionaries(client: TestClient) -> None:
     body = client.get("/api/dictionaries").json()
     assert body["domains"][0]["name"] == "d1.com"
     assert {o["id"] for o in body["offers"]} == {100, 200}
     assert body["sources"][0]["id"] == 20
 
 
-def test_create_uses_first_dictionary_entries(
-    client: TestClient, fake: FakeKeitaro
-) -> None:
+def test_create_uses_first_dictionary_entries(client: TestClient) -> None:
     r = client.post("/api/campaigns", json={"name": "c1", "geo": "de", "offer_id": 100})
     assert r.status_code == 201
     body = r.json()
@@ -40,7 +41,7 @@ def test_create_builds_two_streams(client: TestClient, fake: FakeKeitaro) -> Non
     ]
 
 
-def test_create_keeps_existing_prefix(client: TestClient, fake: FakeKeitaro) -> None:
+def test_create_keeps_existing_prefix(client: TestClient) -> None:
     r = client.post(
         "/api/campaigns",
         json={"name": "test_rozanov_pre", "geo": "US", "offer_id": 100, "domain_id": 2},
@@ -55,7 +56,7 @@ def test_create_rejects_unknown_offer(client: TestClient, fake: FakeKeitaro) -> 
     assert not any(c[0] == "create_campaign" for c in fake.calls)
 
 
-def test_create_rejects_unknown_domain(client: TestClient, fake: FakeKeitaro) -> None:
+def test_create_rejects_unknown_domain(client: TestClient) -> None:
     r = client.post(
         "/api/campaigns",
         json={"name": "c", "geo": "US", "offer_id": 100, "domain_id": 77},
@@ -69,7 +70,7 @@ def test_create_rejects_empty_dictionary(client: TestClient, fake: FakeKeitaro) 
     assert r.status_code == 400
 
 
-def test_list_campaigns(client: TestClient, fake: FakeKeitaro) -> None:
+def test_list_campaigns(client: TestClient) -> None:
     client.post("/api/campaigns", json={"name": "c1", "geo": "US", "offer_id": 100})
     rows = client.get("/api/campaigns").json()
     assert len(rows) == 1
@@ -115,9 +116,13 @@ def test_stream_failure_deletes_the_campaign(
 
 
 def test_cleanup_failure_keeps_the_original_error(
-    client: TestClient, fake: FakeKeitaro
+    client: TestClient, fake: FakeKeitaro, caplog: pytest.LogCaptureFixture
 ) -> None:
     fake.create_stream_failures = [HTTPException(502, "boom")]
     fake.delete_campaign_failures = [HTTPException(404, "gone")]
-    r = client.post("/api/campaigns", json={"name": "c1", "geo": "US", "offer_id": 100})
+    with caplog.at_level(logging.WARNING, logger="app.routers.creator"):
+        r = client.post(
+            "/api/campaigns", json={"name": "c1", "geo": "US", "offer_id": 100}
+        )
     assert r.status_code == 502
+    assert "cleanup failed" in caplog.text

@@ -1,19 +1,31 @@
 """Campaign creator endpoints: dictionaries and campaign creation."""
 
+import logging
 import secrets
-from contextlib import suppress
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..db import get_db
 from ..keitaro import KeitaroClient, get_client
 from ..models import CampaignRecord
-from ..schemas import CampaignCreate
+from ..schemas import (
+    CampaignCreate,
+    CampaignCreated,
+    CampaignListItem,
+    Dictionaries,
+    DictItem,
+)
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["creator"])
+
+DbSession = Annotated[Session, Depends(get_db)]
+Tracker = Annotated[KeitaroClient, Depends(get_client)]
 
 
 def _pick(items: list[dict[str, Any]], wanted: int | None, label: str) -> int:
@@ -75,22 +87,22 @@ def _offer_stream_payload(campaign_id: int, offer_id: int) -> dict[str, Any]:
 
 
 @router.get("/dictionaries")
-def dictionaries(k: KeitaroClient = Depends(get_client)) -> dict[str, Any]:
+def dictionaries(k: Tracker) -> Dictionaries:
     """Dictionaries for the form: domains, groups, sources, offers."""
-    return {
-        "domains": [{"id": d["id"], "name": d["name"]} for d in k.domains()],
-        "groups": [{"id": g["id"], "name": g["name"]} for g in k.groups()],
-        "sources": [{"id": s["id"], "name": s["name"]} for s in k.traffic_sources()],
-        "offers": [{"id": o["id"], "name": o["name"]} for o in k.offers()],
-    }
+    return Dictionaries(
+        domains=[DictItem(id=d["id"], name=d["name"]) for d in k.domains()],
+        groups=[DictItem(id=g["id"], name=g["name"]) for g in k.groups()],
+        sources=[DictItem(id=s["id"], name=s["name"]) for s in k.traffic_sources()],
+        offers=[DictItem(id=o["id"], name=o["name"]) for o in k.offers()],
+    )
 
 
 @router.post("/campaigns", status_code=201)
 def create_campaign(
     body: CampaignCreate,
-    db: Session = Depends(get_db),
-    k: KeitaroClient = Depends(get_client),
-) -> dict[str, Any]:
+    db: DbSession,
+    k: Tracker,
+) -> CampaignCreated:
     offers = k.offers()
     if not any(o["id"] == body.offer_id for o in offers):
         raise HTTPException(400, f"Оффер {body.offer_id} не найден в Keitaro")
@@ -125,8 +137,14 @@ def create_campaign(
         k.create_stream(_geo_stream_payload(cid, body.geo))
         k.create_stream(_offer_stream_payload(cid, body.offer_id))
     except HTTPException:
-        with suppress(HTTPException):
+        try:
             k.delete_campaign(cid)
+        except HTTPException as cleanup_error:
+            logger.warning(
+                "campaign %s created in Keitaro but cleanup failed: %s",
+                cid,
+                cleanup_error.detail,
+            )
         raise
 
     rec = CampaignRecord(
@@ -140,29 +158,26 @@ def create_campaign(
     )
     db.add(rec)
     db.commit()
-    return {
-        "id": cid,
-        "name": name,
-        "domain_id": domain_id,
-        "group_id": group_id,
-        "source_id": source_id,
-    }
+    return CampaignCreated(
+        id=cid,
+        name=name,
+        domain_id=domain_id,
+        group_id=group_id,
+        source_id=source_id,
+    )
 
 
 @router.get("/campaigns")
 def list_campaigns(
-    db: Session = Depends(get_db),
-    limit: int = Query(default=100, ge=1, le=500),
-) -> list[dict[str, Any]]:
-    rows = (
-        db.query(CampaignRecord).order_by(CampaignRecord.id.desc()).limit(limit).all()
-    )
+    db: DbSession,
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+) -> list[CampaignListItem]:
+    rows = db.scalars(
+        select(CampaignRecord).order_by(CampaignRecord.id.desc()).limit(limit)
+    ).all()
     return [
-        {
-            "id": r.keitaro_id,
-            "name": r.name,
-            "geo": r.geo,
-            "created_at": r.created_at.isoformat(),
-        }
+        CampaignListItem(
+            id=r.keitaro_id, name=r.name, geo=r.geo, created_at=r.created_at
+        )
         for r in rows
     ]

@@ -2,6 +2,7 @@
 
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models import CampaignRecord, OfferChange
@@ -153,7 +154,7 @@ def test_offer_changes_are_logged(
         )
     ]
     client.delete(f"/api/campaigns/{cid}/offers/200")
-    changes = db.query(OfferChange).all()
+    changes = db.scalars(select(OfferChange)).all()
     assert [(c.offer_id, c.action) for c in changes] == [(200, "remove")]
 
 
@@ -165,5 +166,5 @@ def test_changes_of_foreign_campaigns_are_not_logged(
         {"offer_id": 200, "share": 0, "state": "active"}
     )
     client.delete("/api/campaigns/1000/offers/200")
-    assert db.query(CampaignRecord).count() == 0
-    assert db.query(OfferChange).count() == 0
+    assert db.scalar(select(func.count()).select_from(CampaignRecord)) == 0
+    assert db.scalar(select(func.count()).select_from(OfferChange)) == 0

@@ -1,11 +1,14 @@
 """Thin client for the Keitaro Admin API v1 (Api-Key header)."""
 
+import logging
 from typing import Any
 
 import httpx
 from fastapi import HTTPException
 
 from .config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class KeitaroClient:
@@ -27,8 +30,16 @@ class KeitaroClient:
         try:
             r = self._client.request(method, path, **kwargs)
         except httpx.HTTPError as e:
+            logger.warning("Keitaro unreachable: %s %s: %s", method, path, e)
             raise HTTPException(502, f"Keitaro недоступен: {e}") from e
         if r.status_code >= 400:
+            logger.warning(
+                "Keitaro rejected %s %s with %d: %s",
+                method,
+                path,
+                r.status_code,
+                r.text[:200],
+            )
             raise HTTPException(r.status_code, f"Keitaro: {r.text[:500]}")
         return r.json() if r.content else None
 
@@ -83,6 +94,10 @@ class KeitaroClient:
         }
         return self._request("POST", "/report/build", json=body)
 
+    def close(self) -> None:
+        """Release the underlying connection pool."""
+        self._client.close()
+
 
 _client: KeitaroClient | None = None
 
@@ -93,3 +108,11 @@ def get_client() -> KeitaroClient:
     if _client is None:
         _client = KeitaroClient()
     return _client
+
+
+def close_client() -> None:
+    """Close the shared client if it exists; safe to call more than once."""
+    global _client
+    if _client is not None:
+        _client.close()
+        _client = None

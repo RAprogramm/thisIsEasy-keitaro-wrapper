@@ -1,13 +1,14 @@
 """Tests for the Keitaro HTTP client, with all traffic mocked by respx."""
 
 import json
+import logging
 
 import httpx
 import pytest
 import respx
 from fastapi import HTTPException
 
-from app.keitaro import KeitaroClient, get_client
+from app.keitaro import KeitaroClient, close_client, get_client
 
 BASE = "https://k.test/admin_api/v1"
 
@@ -22,6 +23,19 @@ def test_default_client_uses_settings() -> None:
     assert client.base.endswith("/admin_api/v1")
     assert client.headers["Api-Key"]
     assert get_client() is client
+
+
+def test_close_client_releases_and_resets_singleton() -> None:
+    client = get_client()
+    close_client()
+    assert client._client.is_closed
+    assert get_client() is not client
+    close_client()
+
+
+def test_close_client_without_singleton_is_noop() -> None:
+    close_client()
+    close_client()
 
 
 @respx.mock
@@ -56,11 +70,32 @@ def test_http_error_is_passed_through(kc: KeitaroClient) -> None:
 
 
 @respx.mock
-def test_transport_error_becomes_502(kc: KeitaroClient) -> None:
+def test_transport_error_becomes_502(
+    kc: KeitaroClient, caplog: pytest.LogCaptureFixture
+) -> None:
     respx.get(f"{BASE}/groups").mock(side_effect=httpx.ConnectError("boom"))
-    with pytest.raises(HTTPException) as exc:
+    with (
+        caplog.at_level(logging.WARNING, logger="app.keitaro"),
+        pytest.raises(HTTPException) as exc,
+    ):
         kc.groups()
     assert exc.value.status_code == 502
+    assert "Keitaro unreachable" in caplog.text
+    assert "GET /groups" in caplog.text
+
+
+@respx.mock
+def test_http_error_is_logged(
+    kc: KeitaroClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    respx.get(f"{BASE}/offers").mock(return_value=httpx.Response(404, text="not found"))
+    with (
+        caplog.at_level(logging.WARNING, logger="app.keitaro"),
+        pytest.raises(HTTPException),
+    ):
+        kc.offers()
+    assert "Keitaro rejected" in caplog.text
+    assert "404" in caplog.text
 
 
 @respx.mock
