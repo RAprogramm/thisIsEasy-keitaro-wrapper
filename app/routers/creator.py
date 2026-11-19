@@ -4,7 +4,7 @@ import logging
 import secrets
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -31,7 +31,7 @@ Tracker = Annotated[KeitaroClient, Depends(get_client)]
 _dictionaries_cache: TtlCache[Dictionaries] = TtlCache(ttl=settings.dictionaries_ttl)
 
 
-def _pick(items: list[dict[str, Any]], wanted: int | None, label: str) -> int:
+def _pick(items: list[Any], wanted: int | None, label: str) -> int:
     if wanted is not None:
         if not any(i["id"] == wanted for i in items):
             raise HTTPException(400, f"{label} с id={wanted} не найден в Keitaro")
@@ -109,7 +109,22 @@ def create_campaign(
     body: CampaignCreate,
     db: DbSession,
     k: Tracker,
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ) -> CampaignCreated:
+    if idempotency_key:
+        existing = db.scalars(
+            select(CampaignRecord).where(
+                CampaignRecord.idempotency_key == idempotency_key
+            )
+        ).first()
+        if existing is not None:
+            return CampaignCreated(
+                id=existing.keitaro_id,
+                name=existing.name,
+                domain_id=existing.domain_id or 0,
+                group_id=existing.group_id or 0,
+                source_id=existing.source_id or 0,
+            )
     offers = k.offers()
     if not any(o["id"] == body.offer_id for o in offers):
         raise HTTPException(400, f"Оффер {body.offer_id} не найден в Keitaro")
@@ -143,28 +158,44 @@ def create_campaign(
     try:
         k.create_stream(_geo_stream_payload(cid, body.geo))
         k.create_stream(_offer_stream_payload(cid, body.offer_id))
-    except HTTPException:
+    except Exception as stream_error:
+        logger.warning("stream creation failed for campaign %s: %s", cid, stream_error)
         try:
             k.delete_campaign(cid)
-        except HTTPException as cleanup_error:
+        except Exception as cleanup_error:
             logger.warning(
                 "campaign %s created in Keitaro but cleanup failed: %s",
                 cid,
-                cleanup_error.detail,
+                cleanup_error,
             )
-        raise
+        if isinstance(stream_error, HTTPException):
+            raise
+        raise HTTPException(502, f"Keitaro: {stream_error}") from stream_error
 
-    rec = CampaignRecord(
-        keitaro_id=cid,
-        name=name,
-        geo=body.geo,
-        offer_id=body.offer_id,
-        domain_id=domain_id,
-        group_id=group_id,
-        source_id=source_id,
-    )
-    db.add(rec)
-    db.commit()
+    try:
+        rec = CampaignRecord(
+            keitaro_id=cid,
+            name=name,
+            geo=body.geo,
+            offer_id=body.offer_id,
+            domain_id=domain_id,
+            group_id=group_id,
+            source_id=source_id,
+            idempotency_key=idempotency_key,
+        )
+        db.add(rec)
+        db.commit()
+    except Exception as db_error:
+        logger.exception("failed to persist campaign %s", cid)
+        try:
+            k.delete_campaign(cid)
+        except Exception as cleanup_error:
+            logger.warning(
+                "campaign %s created in Keitaro but cleanup failed: %s",
+                cid,
+                cleanup_error,
+            )
+        raise HTTPException(500, "Failed to persist campaign") from db_error
     logger.info("created campaign %s (geo=%s, offer=%s)", cid, body.geo, body.offer_id)
     return CampaignCreated(
         id=cid,

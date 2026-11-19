@@ -1,5 +1,7 @@
 """Tests for the in-process TTL cache."""
 
+import pytest
+
 from app.cache import TtlCache
 
 
@@ -45,3 +47,30 @@ def test_cache_clear_forces_recompute() -> None:
     cache.clear()
     assert cache.get_or_set(factory) == 7
     assert calls["n"] == 2
+
+
+def test_cache_returns_stale_on_factory_failure() -> None:
+    clock = {"now": 0.0}
+    cache: TtlCache[int] = TtlCache(ttl=10.0, clock=lambda: clock["now"])
+    calls = {"n": 0}
+
+    def factory() -> int:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return 7
+        raise RuntimeError("boom")
+
+    assert cache.get_or_set(factory) == 7
+    clock["now"] = 10.0
+    assert cache.get_or_set(factory) == 7
+    assert calls["n"] == 2
+
+
+def test_cache_propagates_when_no_stale() -> None:
+    cache: TtlCache[int] = TtlCache(ttl=10.0, clock=lambda: 0.0)
+
+    def factory() -> int:
+        raise ValueError("nope")
+
+    with pytest.raises(ValueError, match="nope"):
+        cache.get_or_set(factory)

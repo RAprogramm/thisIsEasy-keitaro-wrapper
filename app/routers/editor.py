@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..keitaro import KeitaroClient, get_client
-from ..models import CampaignRecord, OfferChange, StreamOffer
+from ..models import CampaignRecord, OfferChange, OfferStatus, StreamOffer
 from ..schemas import CampaignView, OfferAdd, OfferStats, OfferView, StreamView
 
 logger = logging.getLogger(__name__)
@@ -19,23 +19,21 @@ router = APIRouter(prefix="/api/campaigns", tags=["editor"])
 DbSession = Annotated[Session, Depends(get_db)]
 Tracker = Annotated[KeitaroClient, Depends(get_client)]
 
-ACTIVE_STATUSES = ("active", "pending_add")
-REMOVED_STATUSES = ("pending_remove", "removed")
+ACTIVE_STATUSES = (OfferStatus.ACTIVE, OfferStatus.PENDING_ADD)
+REMOVED_STATUSES = (OfferStatus.PENDING_REMOVE, OfferStatus.REMOVED)
 
 
-def _offer_stream(
-    streams: list[dict[str, Any]], stream_id: int | None
-) -> dict[str, Any]:
+def _offer_stream(streams: Any, stream_id: int | None) -> dict[str, Any]:
     if stream_id is not None:
         for s in streams:
             if s["id"] == stream_id:
                 if s.get("schema") != "landings":
                     raise HTTPException(400, "Поток не принимает офферы")
-                return s
+                return cast(dict[str, Any], s)
         raise HTTPException(404, "Поток не найден")
     for s in streams:
         if s.get("schema") == "landings":
-            return s
+            return cast(dict[str, Any], s)
     raise HTTPException(400, "В кампании нет потока с офферами")
 
 
@@ -63,7 +61,7 @@ def _stream_payload(offers: list[StreamOffer]) -> dict[str, Any]:
             {
                 "offer_id": o.offer_id,
                 "share": o.share,
-                "state": "active",
+                "state": OfferStatus.ACTIVE,
             }
             for o in offers
             if o.status in ACTIVE_STATUSES
@@ -114,7 +112,7 @@ def _sync_stream(
     db: Session,
     campaign_id: int,
     stream_id: int,
-    keitaro_offers: list[dict[str, Any]],
+    keitaro_offers: Any,
 ) -> list[StreamOffer]:
     """Reconcile local tracked offers with the current Keitaro stream state."""
     keitaro_ids = {o["offer_id"] for o in keitaro_offers}
@@ -123,9 +121,9 @@ def _sync_stream(
     rows = _local_offers(db, campaign_id, stream_id)
     dirty = _is_dirty(rows)
     for r in rows:
-        if r.status == "active":
+        if r.status == OfferStatus.ACTIVE:
             if r.offer_id not in keitaro_ids:
-                r.status = "removed"
+                r.status = OfferStatus.REMOVED
             elif (
                 not r.pinned and not dirty and keitaro_share.get(r.offer_id) is not None
             ):
@@ -146,7 +144,7 @@ def _sync_stream(
                     pinned=False,
                     published_share=int(o.get("share", 0)),
                     published_pinned=False,
-                    status="active",
+                    status=OfferStatus.ACTIVE,
                 )
             )
     db.commit()
@@ -155,7 +153,7 @@ def _sync_stream(
 
 def _is_dirty(offers: list[StreamOffer]) -> bool:
     return any(
-        o.status in ("pending_add", "pending_remove")
+        o.status in (OfferStatus.PENDING_ADD, OfferStatus.PENDING_REMOVE)
         or o.share != o.published_share
         or o.pinned != o.published_pinned
         for o in offers
@@ -234,7 +232,9 @@ def get_campaign(
                         offer_id=oid,
                         name=names.get(oid, f"#{oid}"),
                         share=o.share,
-                        state="active" if o.status in ACTIVE_STATUSES else "removed",
+                        state=OfferStatus.ACTIVE
+                        if o.status in ACTIVE_STATUSES
+                        else OfferStatus.REMOVED,
                         status=o.status,
                         pinned=o.pinned,
                         stats=stats.get(oid, _zero_stats())
@@ -282,10 +282,10 @@ def add_offer(
 
     rows = _local_offers(db, campaign_id, sid)
     existing = next((r for r in rows if r.offer_id == body.offer_id), None)
-    if existing is not None and existing.status != "removed":
+    if existing is not None and existing.status != OfferStatus.REMOVED:
         raise HTTPException(409, "Оффер уже есть в потоке")
-    if existing is not None and existing.status == "removed":
-        existing.status = "pending_add"
+    if existing is not None and existing.status == OfferStatus.REMOVED:
+        existing.status = OfferStatus.PENDING_ADD
         existing.share = 0
         existing.pinned = False
         existing.published_share = 0
@@ -298,7 +298,7 @@ def add_offer(
                 offer_id=body.offer_id,
                 share=0,
                 pinned=False,
-                status="pending_add",
+                status=OfferStatus.PENDING_ADD,
             )
         )
     db.commit()
@@ -325,14 +325,14 @@ def remove_offer(
 
     rows = _local_offers(db, campaign_id, sid)
     target = next((r for r in rows if r.offer_id == offer_id), None)
-    if target is None or target.status == "removed":
+    if target is None or target.status == OfferStatus.REMOVED:
         raise HTTPException(404, "Оффера нет в потоке")
-    if target.status == "pending_add":
+    if target.status == OfferStatus.PENDING_ADD:
         _unlog(db, campaign_id, offer_id, "add")
         db.delete(target)
         db.commit()
     else:
-        target.status = "pending_remove"
+        target.status = OfferStatus.PENDING_REMOVE
         target.share = 0
         target.pinned = False
         remaining_active = [
@@ -362,9 +362,9 @@ def restore_offer(
 
     rows = _local_offers(db, campaign_id, sid)
     target = next((r for r in rows if r.offer_id == offer_id), None)
-    if target is None or target.status != "removed":
+    if target is None or target.status != OfferStatus.REMOVED:
         raise HTTPException(404, "Оффер не в архиве")
-    target.status = "pending_add"
+    target.status = OfferStatus.PENDING_ADD
     target.share = 0
     target.pinned = False
     _rebalance(rows)
@@ -389,7 +389,7 @@ def pin_offer(
 
     rows = _local_offers(db, campaign_id, sid)
     target = next((r for r in rows if r.offer_id == offer_id), None)
-    if target is None or target.status == "removed":
+    if target is None or target.status == OfferStatus.REMOVED:
         raise HTTPException(404, "Оффер не найден в потоке")
     target.pinned = pinned
     _rebalance(rows)
@@ -419,10 +419,10 @@ def push_stream(
     k.update_stream(sid, _stream_payload(push_offers))
 
     for r in rows:
-        if r.status == "pending_add":
-            r.status = "active"
-        elif r.status == "pending_remove":
-            r.status = "removed"
+        if r.status == OfferStatus.PENDING_ADD:
+            r.status = OfferStatus.ACTIVE
+        elif r.status == OfferStatus.PENDING_REMOVE:
+            r.status = OfferStatus.REMOVED
         r.published_share = r.share
         r.published_pinned = r.pinned
     db.commit()
@@ -441,12 +441,12 @@ def cancel_stream(
     sid = stream["id"]
     rows = _local_offers(db, campaign_id, sid)
     for r in rows:
-        if r.status == "pending_add":
+        if r.status == OfferStatus.PENDING_ADD:
             _unlog(db, campaign_id, r.offer_id, "add")
             db.delete(r)
-        elif r.status == "pending_remove":
+        elif r.status == OfferStatus.PENDING_REMOVE:
             _unlog(db, campaign_id, r.offer_id, "remove")
-            r.status = "active"
+            r.status = OfferStatus.ACTIVE
             r.share = r.published_share
             r.pinned = r.published_pinned
         else:

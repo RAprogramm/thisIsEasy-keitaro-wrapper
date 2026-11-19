@@ -1,6 +1,7 @@
 """SQLAlchemy ORM models for campaigns, offer changes, and tracked stream offers."""
 
 from datetime import datetime
+from enum import StrEnum
 from typing import Literal
 
 from sqlalchemy import (
@@ -8,6 +9,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     UniqueConstraint,
@@ -17,6 +19,16 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
 
+
+class OfferStatus(StrEnum):
+    """Lifecycle status of an offer tracked by the editor."""
+
+    ACTIVE = "active"
+    PENDING_ADD = "pending_add"
+    PENDING_REMOVE = "pending_remove"
+    REMOVED = "removed"
+
+
 CAMPAIGN_RECORD_STATUSES = ("active", "pending_add", "pending_remove", "removed")
 
 
@@ -24,6 +36,10 @@ class CampaignRecord(Base):
     """A campaign created through the creator."""
 
     __tablename__ = "campaigns"
+    __table_args__ = (
+        UniqueConstraint("idempotency_key", name="uq_campaigns_idempotency_key"),
+        Index("ix_campaigns_idempotency_key", "idempotency_key", unique=True),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     keitaro_id: Mapped[int] = mapped_column(Integer, unique=True, index=True)
@@ -33,6 +49,7 @@ class CampaignRecord(Base):
     domain_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     group_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     source_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    idempotency_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -51,7 +68,9 @@ class OfferChange(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    campaign_id: Mapped[int] = mapped_column(ForeignKey("campaigns.id"), index=True)
+    campaign_id: Mapped[int] = mapped_column(
+        ForeignKey("campaigns.id", ondelete="CASCADE"), index=True
+    )
     offer_id: Mapped[int] = mapped_column(Integer)
     action: Mapped[Literal["add", "remove"]] = mapped_column(String(16))
     created_at: Mapped[datetime] = mapped_column(
@@ -83,6 +102,11 @@ class StreamOffer(Base):
             "status IN ('active', 'pending_add', 'pending_remove', 'removed')",
             name="ck_stream_offers_status",
         ),
+        Index(
+            "ix_stream_offers_campaign_stream",
+            "keitaro_campaign_id",
+            "stream_id",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -93,7 +117,7 @@ class StreamOffer(Base):
     pinned: Mapped[bool] = mapped_column(Boolean, default=False)
     published_share: Mapped[int] = mapped_column(Integer, default=0)
     published_pinned: Mapped[bool] = mapped_column(Boolean, default=False)
-    status: Mapped[str] = mapped_column(String(16), default="active")
+    status: Mapped[str] = mapped_column(String(16), default=OfferStatus.ACTIVE)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

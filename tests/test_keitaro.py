@@ -43,7 +43,7 @@ def test_get_returns_json(kc: KeitaroClient) -> None:
     respx.get(f"{BASE}/domains").mock(
         return_value=httpx.Response(200, json=[{"id": 1}])
     )
-    assert kc.domains() == [{"id": 1}]
+    assert kc.domains() == [{"id": 1}]  # type: ignore[comparison-overlap]
 
 
 @respx.mock
@@ -51,7 +51,7 @@ def test_traffic_sources(kc: KeitaroClient) -> None:
     respx.get(f"{BASE}/traffic_sources").mock(
         return_value=httpx.Response(200, json=[{"id": 3}])
     )
-    assert kc.traffic_sources() == [{"id": 3}]
+    assert kc.traffic_sources() == [{"id": 3}]  # type: ignore[comparison-overlap]
 
 
 @respx.mock

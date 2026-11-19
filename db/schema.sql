@@ -7,6 +7,7 @@ CREATE TABLE campaigns (
     domain_id INTEGER,
     group_id INTEGER,
     source_id INTEGER,
+    idempotency_key VARCHAR(64) UNIQUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -14,7 +15,7 @@ CREATE UNIQUE INDEX ix_campaigns_keitaro_id ON campaigns (keitaro_id);
 
 CREATE TABLE offer_changes (
     id SERIAL PRIMARY KEY,
-    campaign_id INTEGER NOT NULL REFERENCES campaigns (id),
+    campaign_id INTEGER NOT NULL REFERENCES campaigns (id) ON DELETE CASCADE,
     offer_id INTEGER NOT NULL,
     action VARCHAR(16) NOT NULL CHECK (action IN ('add', 'remove')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
