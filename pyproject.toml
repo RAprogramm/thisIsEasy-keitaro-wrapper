@@ -3,14 +3,14 @@ name = "keitaro-wrapper"
 version = "1.0.0"
 description = "FastAPI + SQLAlchemy wrapper around the Keitaro Admin API: campaign creator and offer editor"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.14"
 dependencies = [
     "fastapi",
     "uvicorn[standard]",
     "sqlalchemy[asyncio]",
     "alembic",
     "psycopg[binary]",
-    "httpx",
+    "httpx2",
     "pydantic",
     "pydantic-settings",
     "python-dotenv",
@@ -21,10 +21,13 @@ dev = [
     "pytest",
     "pytest-benchmark",
     "pytest-cov",
+    "pytest-httpx2",
     "pytest-socket",
     "respx",
     "ruff",
     "mypy",
+    "yamllint",
+    "pip-audit",
 ]
 
 [tool.uv]
@@ -52,12 +55,12 @@ strict = true
 addopts = "--disable-socket --allow-hosts=127.0.0.1,::1 --allow-unix-socket"
 testpaths = ["tests"]
 pythonpath = ["."]
+filterwarnings = ["error"]
 
 [tool.coverage.run]
-# sysmon is the coverage core used by Python 3.14+ by default. On 3.13 the default
-# settrace cores lose statements after a suspended coroutine resumes
-# (coveragepy/coveragepy#2245), which under-reports async handlers. Drop this line
-# once the upstream fix is released and the pinned coverage includes it.
+# Pin the modern core: sysmon is the default on Python 3.14+ and pinning it keeps
+# measurement identical on every interpreter. The legacy settrace cores under-report
+# statements that run after a suspended coroutine resumes (coveragepy/coveragepy#2245).
 core = "sysmon"
 omit = ["app/__main__.py"]
 
@@ -68,4 +71,4 @@ exclude_also = [
 
 [tool.mypy]
 strict = true
-python_version = "3.13"
+python_version = "3.14"

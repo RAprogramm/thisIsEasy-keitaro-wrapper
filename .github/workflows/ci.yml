@@ -9,6 +9,10 @@ name: CI
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lint:
     runs-on: ubuntu-latest
@@ -22,6 +26,16 @@ jobs:
         run: uv run --locked ruff format --check .
       - name: Types
         run: uv run --locked mypy app tests alembic
+      - name: Workflow lint
+        uses: docker://rhysd/actionlint:1.7.12
+      - name: YAML lint
+        run: uv run --locked yamllint .github docker-compose.yml
+      - name: Dockerfile lint
+        uses: docker://hadolint/hadolint:v2.15.1-alpine
+        with:
+          args: Dockerfile
+      - name: Dependency audit
+        run: uv run --locked pip-audit --skip-editable
 
   dependencies:
     runs-on: ubuntu-latest
@@ -66,7 +80,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.13", "3.14", "3.15"]
+        python-version: ["3.14", "3.15"]
     services:
       postgres:
         image: postgres:17
@@ -89,6 +103,19 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Test
         run: uv run --locked pytest --cov=app --cov-report=term-missing --cov-fail-under=100
+
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4.4.1
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
+        with:
+          context: .
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   sql-analysis:
     runs-on: ubuntu-latest

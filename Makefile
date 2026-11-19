@@ -1,4 +1,4 @@
-.PHONY: run test lint migrate requirements
+.PHONY: run test lint migrate requirements audit
 
 run:
 	uv run python -m app
@@ -13,4 +13,7 @@ requirements:
 	uv export --locked --no-dev -o requirements.txt
 
 lint:
-	uv run ruff check . && uv run ruff format --check . && uv run mypy app tests alembic
+	uv run ruff check . && uv run ruff format --check . && uv run mypy app tests alembic && uv run yamllint .github docker-compose.yml
+
+audit:
+	uv run pip-audit --skip-editable

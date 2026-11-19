@@ -7,7 +7,7 @@ import threading
 from collections.abc import Callable
 from typing import Any, ClassVar, TypedDict, cast
 
-import httpx
+import httpx2
 from fastapi import HTTPException
 
 from .config import settings
@@ -82,7 +82,7 @@ class KeitaroStream(TypedDict, total=False):
 class KeitaroClient:
     """Async client over the Keitaro Admin API v1.
 
-    Wraps a persistent ``httpx.AsyncClient`` so connections are reused between calls.
+    Wraps a persistent ``httpx2.AsyncClient`` so connections are reused between calls.
     """
 
     def __init__(self, base_url: str | None = None, api_key: str | None = None) -> None:
@@ -92,7 +92,7 @@ class KeitaroClient:
         }
         self._sleep: Callable[[float], Any] = asyncio.sleep
         self.MAX_ATTEMPTS = 3
-        self._client = httpx.AsyncClient(
+        self._client = httpx2.AsyncClient(
             base_url=self.base,
             headers=self.headers,
             timeout=settings.keitaro_timeout,
@@ -105,7 +105,7 @@ class KeitaroClient:
         for attempt in range(1, self.MAX_ATTEMPTS + 1):
             try:
                 r = await self._client.request(method, path, **kwargs)
-            except httpx.HTTPError as e:
+            except httpx2.HTTPError as e:
                 last_error = e
                 if attempt == self.MAX_ATTEMPTS:
                     logger.warning("Keitaro unreachable: %s %s: %s", method, path, e)

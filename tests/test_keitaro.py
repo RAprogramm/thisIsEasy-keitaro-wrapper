@@ -1,9 +1,13 @@
-"""Tests for the Keitaro HTTP client, with all traffic mocked by respx."""
+"""Tests for the Keitaro HTTP client.
+
+All traffic is mocked by respx at the ``httpcore2`` transport level through the
+``httpx2_mock`` fixture registered by the ``pytest-httpx2`` plugin.
+"""
 
 import json
 import logging
 
-import httpx
+import httpx2
 import pytest
 import respx
 from fastapi import HTTPException
@@ -41,47 +45,44 @@ async def test_close_client_without_singleton_is_noop() -> None:
     await close_client()
 
 
-@respx.mock
 @pytest.mark.anyio
-async def test_get_returns_json(kc: KeitaroClient) -> None:
-    respx.get(f"{BASE}/domains").mock(
-        return_value=httpx.Response(200, json=[{"id": 1}])
-    )
+async def test_get_returns_json(httpx2_mock: respx.Router, kc: KeitaroClient) -> None:
+    httpx2_mock.get(f"{BASE}/domains").respond(200, json=[{"id": 1}])
     assert (await kc.domains()) == [{"id": 1}]  # type: ignore[comparison-overlap]
 
 
-@respx.mock
 @pytest.mark.anyio
-async def test_traffic_sources(kc: KeitaroClient) -> None:
-    respx.get(f"{BASE}/traffic_sources").mock(
-        return_value=httpx.Response(200, json=[{"id": 3}])
-    )
+async def test_traffic_sources(httpx2_mock: respx.Router, kc: KeitaroClient) -> None:
+    httpx2_mock.get(f"{BASE}/traffic_sources").respond(200, json=[{"id": 3}])
     assert (await kc.traffic_sources()) == [{"id": 3}]  # type: ignore[comparison-overlap]
 
 
-@respx.mock
 @pytest.mark.anyio
-async def test_empty_response_returns_none(kc: KeitaroClient) -> None:
-    respx.delete(f"{BASE}/campaigns/1").mock(return_value=httpx.Response(204))
+async def test_empty_response_returns_none(
+    httpx2_mock: respx.Router, kc: KeitaroClient
+) -> None:
+    httpx2_mock.delete(f"{BASE}/campaigns/1").respond(204)
     assert await kc._request("DELETE", "/campaigns/1") is None
 
 
-@respx.mock
 @pytest.mark.anyio
-async def test_http_error_is_passed_through(kc: KeitaroClient) -> None:
-    respx.get(f"{BASE}/offers").mock(return_value=httpx.Response(404, text="not found"))
+async def test_http_error_is_passed_through(
+    httpx2_mock: respx.Router, kc: KeitaroClient
+) -> None:
+    httpx2_mock.get(f"{BASE}/offers").respond(404, text="not found")
     with pytest.raises(HTTPException) as exc:
         await kc.offers()
     assert exc.value.status_code == 404
     assert "not found" in exc.value.detail
 
 
-@respx.mock
 @pytest.mark.anyio
 async def test_transport_error_becomes_502(
-    kc: KeitaroClient, caplog: pytest.LogCaptureFixture
+    httpx2_mock: respx.Router,
+    kc: KeitaroClient,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
-    respx.get(f"{BASE}/groups").mock(side_effect=httpx.ConnectError("boom"))
+    httpx2_mock.get(f"{BASE}/groups").mock(side_effect=httpx2.ConnectError("boom"))
     with (
         caplog.at_level(logging.WARNING, logger="app.keitaro"),
         pytest.raises(HTTPException) as exc,
@@ -92,12 +93,13 @@ async def test_transport_error_becomes_502(
     assert "GET /groups" in caplog.text
 
 
-@respx.mock
 @pytest.mark.anyio
 async def test_http_error_is_logged(
-    kc: KeitaroClient, caplog: pytest.LogCaptureFixture
+    httpx2_mock: respx.Router,
+    kc: KeitaroClient,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
-    respx.get(f"{BASE}/offers").mock(return_value=httpx.Response(404, text="not found"))
+    httpx2_mock.get(f"{BASE}/offers").respond(404, text="not found")
     with (
         caplog.at_level(logging.WARNING, logger="app.keitaro"),
         pytest.raises(HTTPException),
@@ -107,63 +109,49 @@ async def test_http_error_is_logged(
     assert "404" in caplog.text
 
 
-@respx.mock
 @pytest.mark.anyio
-async def test_groups_sends_type_param(kc: KeitaroClient) -> None:
-    route = respx.get(f"{BASE}/groups").mock(return_value=httpx.Response(200, json=[]))
+async def test_groups_sends_type_param(
+    httpx2_mock: respx.Router, kc: KeitaroClient
+) -> None:
+    route = httpx2_mock.get(f"{BASE}/groups").respond(200, json=[])
     assert (await kc.groups()) == []
     assert route.calls.last.request.url.params["type"] == "campaigns"
 
 
-@respx.mock
 @pytest.mark.anyio
-async def test_create_campaign_sends_json(kc: KeitaroClient) -> None:
-    route = respx.post(f"{BASE}/campaigns").mock(
-        return_value=httpx.Response(200, json={"id": 5})
-    )
+async def test_create_campaign_sends_json(
+    httpx2_mock: respx.Router, kc: KeitaroClient
+) -> None:
+    route = httpx2_mock.post(f"{BASE}/campaigns").respond(200, json={"id": 5})
     assert (await kc.create_campaign({"name": "x"})) == {"id": 5}
     assert json.loads(route.calls.last.request.content) == {"name": "x"}
 
 
-@respx.mock
 @pytest.mark.anyio
-async def test_campaign_reads(kc: KeitaroClient) -> None:
-    respx.get(f"{BASE}/campaigns/9").mock(
-        return_value=httpx.Response(200, json={"id": 9})
-    )
-    respx.get(f"{BASE}/campaigns/9/streams").mock(
-        return_value=httpx.Response(200, json=[])
-    )
+async def test_campaign_reads(httpx2_mock: respx.Router, kc: KeitaroClient) -> None:
+    httpx2_mock.get(f"{BASE}/campaigns/9").respond(200, json={"id": 9})
+    httpx2_mock.get(f"{BASE}/campaigns/9/streams").respond(200, json=[])
     assert (await kc.get_campaign(9))["id"] == 9
     assert (await kc.campaign_streams(9)) == []
 
 
-@respx.mock
 @pytest.mark.anyio
-async def test_stream_writes(kc: KeitaroClient) -> None:
-    respx.post(f"{BASE}/streams").mock(return_value=httpx.Response(200, json={"id": 1}))
-    respx.put(f"{BASE}/streams/1").mock(
-        return_value=httpx.Response(200, json={"id": 1})
-    )
+async def test_stream_writes(httpx2_mock: respx.Router, kc: KeitaroClient) -> None:
+    httpx2_mock.post(f"{BASE}/streams").respond(200, json={"id": 1})
+    httpx2_mock.put(f"{BASE}/streams/1").respond(200, json={"id": 1})
     assert (await kc.create_stream({"a": 1})) == {"id": 1}
     assert (await kc.update_stream(1, {"b": 2})) == {"id": 1}
 
 
-@respx.mock
 @pytest.mark.anyio
-async def test_delete_campaign(kc: KeitaroClient) -> None:
-    respx.delete(f"{BASE}/campaigns/4").mock(
-        return_value=httpx.Response(200, json={"id": 4})
-    )
+async def test_delete_campaign(httpx2_mock: respx.Router, kc: KeitaroClient) -> None:
+    httpx2_mock.delete(f"{BASE}/campaigns/4").respond(200, json={"id": 4})
     assert (await kc.delete_campaign(4)) == {"id": 4}
 
 
-@respx.mock
 @pytest.mark.anyio
-async def test_report_builds_body(kc: KeitaroClient) -> None:
-    route = respx.post(f"{BASE}/report/build").mock(
-        return_value=httpx.Response(200, json={"rows": []})
-    )
+async def test_report_builds_body(httpx2_mock: respx.Router, kc: KeitaroClient) -> None:
+    route = httpx2_mock.post(f"{BASE}/report/build").respond(200, json={"rows": []})
     assert (await kc.report(7, ["offer_id"], interval="all_time")) == {"rows": []}
     body = json.loads(route.calls.last.request.content)
     assert body["range"] == {"interval": "all_time"}
@@ -174,87 +162,94 @@ async def test_report_builds_body(kc: KeitaroClient) -> None:
 
 
 @pytest.mark.anyio
-async def test_retries_on_transient_status_then_succeeds(kc: KeitaroClient) -> None:
+async def test_retries_on_transient_status_then_succeeds(
+    httpx2_mock: respx.Router, kc: KeitaroClient
+) -> None:
     sleeps: list[float] = []
     kc._sleep = lambda d: sleeps.append(float(d))
     kc.MAX_ATTEMPTS = 3
     responses = [
-        httpx.Response(503, text="busy"),
-        httpx.Response(200, json=[{"id": 1, "name": "g"}]),
+        respx.MockResponse(503, text="busy"),
+        respx.MockResponse(200, json=[{"id": 1, "name": "g"}]),
     ]
-    with respx.mock:
-        respx.get(f"{BASE}/groups").mock(side_effect=responses)
-        assert (await kc.groups()) == [{"id": 1, "name": "g"}]
+    httpx2_mock.get(f"{BASE}/groups").mock(side_effect=responses)
+    assert (await kc.groups()) == [{"id": 1, "name": "g"}]
     assert len(sleeps) == 1
 
 
 @pytest.mark.anyio
-async def test_retries_on_connect_error_then_succeeds(kc: KeitaroClient) -> None:
+async def test_retries_on_connect_error_then_succeeds(
+    httpx2_mock: respx.Router, kc: KeitaroClient
+) -> None:
     sleeps: list[float] = []
     kc._sleep = lambda d: sleeps.append(float(d))
     kc.MAX_ATTEMPTS = 3
-    with respx.mock:
-        respx.get(f"{BASE}/groups").mock(
-            side_effect=[httpx.ConnectError("boom"), httpx.Response(200, json=[])]
-        )
-        assert (await kc.groups()) == []
+    httpx2_mock.get(f"{BASE}/groups").mock(
+        side_effect=[
+            httpx2.ConnectError("boom"),
+            respx.MockResponse(200, json=[]),
+        ]
+    )
+    assert (await kc.groups()) == []
     assert len(sleeps) == 1
 
 
 @pytest.mark.anyio
-async def test_retries_respect_retry_after(kc: KeitaroClient) -> None:
+async def test_retries_respect_retry_after(
+    httpx2_mock: respx.Router, kc: KeitaroClient
+) -> None:
     sleeps: list[float] = []
     kc._sleep = lambda d: sleeps.append(float(d))
     kc.MAX_ATTEMPTS = 2
-    with respx.mock:
-        respx.get(f"{BASE}/groups").mock(
-            side_effect=[
-                httpx.Response(429, text="slow", headers={"Retry-After": "0.5"}),
-                httpx.Response(200, json=[]),
-            ]
-        )
-        assert (await kc.groups()) == []
+    httpx2_mock.get(f"{BASE}/groups").mock(
+        side_effect=[
+            respx.MockResponse(429, text="slow", headers={"Retry-After": "0.5"}),
+            respx.MockResponse(200, json=[]),
+        ]
+    )
+    assert (await kc.groups()) == []
     assert sleeps == [0.5]
 
 
 @pytest.mark.anyio
-async def test_raises_after_max_attempts(kc: KeitaroClient) -> None:
+async def test_raises_after_max_attempts(
+    httpx2_mock: respx.Router, kc: KeitaroClient
+) -> None:
     sleeps: list[float] = []
     kc._sleep = lambda d: sleeps.append(float(d))
     kc.MAX_ATTEMPTS = 2
-    with respx.mock:
-        respx.get(f"{BASE}/groups").mock(return_value=httpx.Response(503, text="busy"))
-        with pytest.raises(HTTPException) as exc:
-            await kc.groups()
+    httpx2_mock.get(f"{BASE}/groups").mock(
+        return_value=respx.MockResponse(503, text="busy")
+    )
+    with pytest.raises(HTTPException) as exc:
+        await kc.groups()
     assert exc.value.status_code == 503
     assert len(sleeps) == 1
 
 
 @pytest.mark.anyio
-async def test_retries_handle_invalid_retry_after(kc: KeitaroClient) -> None:
+async def test_retries_handle_invalid_retry_after(
+    httpx2_mock: respx.Router, kc: KeitaroClient
+) -> None:
     sleeps: list[float] = []
     kc._sleep = lambda d: sleeps.append(float(d))
     kc.MAX_ATTEMPTS = 2
-    with respx.mock:
-        respx.get(f"{BASE}/groups").mock(
-            side_effect=[
-                httpx.Response(
-                    429, text="slow", headers={"Retry-After": "not-a-number"}
-                ),
-                httpx.Response(200, json=[]),
-            ]
-        )
-        assert (await kc.groups()) == []
+    httpx2_mock.get(f"{BASE}/groups").mock(
+        side_effect=[
+            respx.MockResponse(
+                429, text="slow", headers={"Retry-After": "not-a-number"}
+            ),
+            respx.MockResponse(200, json=[]),
+        ]
+    )
+    assert (await kc.groups()) == []
     assert sleeps == [0.0]
 
 
 @pytest.mark.anyio
-async def test_report_with_date_range(kc: KeitaroClient) -> None:
-    with respx.mock:
-        respx.post(f"{BASE}/report/build").mock(
-            return_value=httpx.Response(200, json={"rows": [], "total": 0})
-        )
-        rep = await kc.report(
-            7, ["offer_id"], date_from="2026-01-01", date_to="2026-02-01"
-        )
+async def test_report_with_date_range(
+    httpx2_mock: respx.Router, kc: KeitaroClient
+) -> None:
+    httpx2_mock.post(f"{BASE}/report/build").respond(200, json={"rows": [], "total": 0})
+    rep = await kc.report(7, ["offer_id"], date_from="2026-01-01", date_to="2026-02-01")
     assert rep == {"rows": [], "total": 0}

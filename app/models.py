@@ -54,7 +54,7 @@ class CampaignRecord(Base):
         DateTime(timezone=True), server_default=func.now()
     )
 
-    changes: Mapped[list["OfferChange"]] = relationship(
+    changes: Mapped[list[OfferChange]] = relationship(
         back_populates="campaign", cascade="all, delete-orphan"
     )
 
