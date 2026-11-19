@@ -1,3 +1,5 @@
+"""Alembic environment: binds migrations to the application metadata."""
+
 from sqlalchemy import engine_from_config, pool
 
 from alembic import context
@@ -10,7 +12,8 @@ config.set_main_option("sqlalchemy.url", settings.database_url)
 target_metadata = Base.metadata
 
 
-def run_migrations_offline():
+def run_migrations_offline() -> None:
+    """Generate migration SQL without a database connection."""
     context.configure(
         url=settings.database_url, target_metadata=target_metadata, literal_binds=True
     )
@@ -18,9 +21,10 @@ def run_migrations_offline():
         context.run_migrations()
 
 
-def run_migrations_online():
+def run_migrations_online() -> None:
+    """Apply migrations to the database named by DATABASE_URL."""
     connectable = engine_from_config(
-        config.get_section(config.config_ini_section),
+        config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )

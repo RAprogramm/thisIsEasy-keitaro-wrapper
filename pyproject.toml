@@ -33,7 +33,8 @@ package = false
 line-length = 88
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "UP", "B", "SIM", "S"]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "S", "FAST", "RUF", "C4", "PERF", "DTZ"]
+ignore = ["RUF001", "RUF002", "RUF003"]
 
 [tool.ruff.lint.flake8-bugbear]
 extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Body"]

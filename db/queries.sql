@@ -15,3 +15,8 @@ WHERE keitaro_id = 214971;
 -- editor._log: append an offer change to the journal.
 INSERT INTO offer_changes (campaign_id, offer_id, action)
 VALUES (1, 18813, 'add');
+
+-- ORM cascade on CampaignRecord deletion (session.delete(record)): the journal
+-- rows are dropped first, then the campaign itself.
+DELETE FROM offer_changes WHERE campaign_id = 1;
+DELETE FROM campaigns WHERE id = 1;
