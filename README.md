@@ -180,7 +180,7 @@ non-root user and reports health through `/healthz`.
 ```bash
 uv sync
 make test          # pytest with coverage, must stay at 100%
-make lint          # ruff check + ruff format --check + mypy + yamllint
+make lint          # ruff + mypy + yamllint + deptry + typos
 make migrate       # alembic upgrade head
 uv run alembic check                       # migrations match the models
 make requirements  # re-export requirements.txt from uv.lock
@@ -196,6 +196,8 @@ migrations to a fresh database and fails on any drift between them and the model
 `db/schema.sql` and `db/queries.sql` mirror the ORM schema and the queries the app issues;
 CI analyzes them with [sql-query-analyzer](https://github.com/RAprogramm/sql-query-analyzer).
 CI also re-exports `requirements.txt` from `uv.lock` and fails if the two have drifted.
+`tests/openapi_snapshot.json` freezes the HTTP contract: any endpoint or schema change
+must be confirmed by regenerating the snapshot (`UPDATE_OPENAPI_SNAPSHOT=1 uv run pytest tests/test_openapi.py`).
 
 CI runs the suite on Python 3.14 and 3.15. Coverage is pinned to the `sysmon` core
 in `[tool.coverage.run]` — the modern core that is the default on Python 3.14+; the legacy

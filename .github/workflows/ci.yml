@@ -3,7 +3,7 @@ name: CI
 
 "on":
   push:
-    branches: [main]
+    branches: ["**"]
   pull_request:
 
 permissions:
@@ -26,6 +26,10 @@ jobs:
         run: uv run --locked ruff format --check .
       - name: Types
         run: uv run --locked mypy app tests alembic
+      - name: Dependency hygiene
+        run: uv run --locked deptry app tests alembic
+      - name: Spell check
+        run: uv run --locked typos
       - name: Workflow lint
         uses: docker://rhysd/actionlint:1.7.12
       - name: YAML lint

@@ -1,0 +1,8 @@
+# False positives: ISO-3166 alpha-2 country codes read as misspellings.
+[default.extend-words]
+BA = "BA"
+FO = "FO"
+PN = "PN"
+
+[files]
+extend-exclude = ["uv.lock", "requirements.txt"]

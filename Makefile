@@ -13,7 +13,7 @@ requirements:
 	uv export --locked --no-dev -o requirements.txt
 
 lint:
-	uv run ruff check . && uv run ruff format --check . && uv run mypy app tests alembic && uv run yamllint .github docker-compose.yml
+	uv run ruff check . && uv run ruff format --check . && uv run mypy app tests alembic && uv run yamllint .github docker-compose.yml && uv run deptry app tests alembic && uv run typos
 
 audit:
 	uv run pip-audit --skip-editable

@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "fastapi",
+    "starlette",
     "uvicorn[standard]",
     "sqlalchemy[asyncio]",
     "alembic",
@@ -28,10 +29,20 @@ dev = [
     "mypy",
     "yamllint",
     "pip-audit",
+    "deptry>=0.25.1",
+    "typos>=1.52.2",
 ]
 
 [tool.uv]
 package = false
+
+[tool.deptry]
+# psycopg is loaded by SQLAlchemy through the `postgresql+psycopg://` scheme and
+# python-dotenv by pydantic-settings when reading .env: both are runtime-only.
+# `app` is the first-party package of this repository.
+[tool.deptry.per_rule_ignores]
+DEP001 = ["app"]
+DEP002 = ["psycopg", "python-dotenv"]
 
 [tool.ruff]
 line-length = 88
