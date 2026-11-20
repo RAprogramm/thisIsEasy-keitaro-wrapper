@@ -64,17 +64,33 @@
     <form id="create-form" class="form">
       <div class="form-grid">
         <div class="field field--span-6">
-          <label for="c-name">Название</label>
+          <div class="field__label">
+            <label for="c-name">Название</label>
+            <span class="hint-wrap">
+              <button class="hint" type="button" aria-describedby="hint-c-name" aria-label="Пояснение к названию">?</button>
+              <span class="hint__bubble" id="hint-c-name" role="tooltip">Имя кампании в Keitaro будет ровно таким, как здесь.</span>
+            </span>
+          </div>
           <input id="c-name" required placeholder="test_rozanov_campaign1" autocomplete="off">
-          <p class="field__hint">Имя кампании в Keitaro будет ровно таким, как здесь.</p>
         </div>
         <div class="field field--span-2">
-          <label for="c-geo">Гео</label>
+          <div class="field__label">
+            <label for="c-geo">Гео</label>
+            <span class="hint-wrap">
+              <button class="hint" type="button" aria-describedby="hint-c-geo" aria-label="Пояснение к коду страны">?</button>
+              <span class="hint__bubble" id="hint-c-geo" role="tooltip">Две буквы ISO-3166, регистр не важен.</span>
+            </span>
+          </div>
           <input id="c-geo" required maxlength="2" placeholder="US" autocomplete="off" autocapitalize="characters">
-          <p class="field__hint">ISO-код.</p>
         </div>
         <div class="field field--span-4">
-          <label for="c-offer">Оффер</label>
+          <div class="field__label">
+            <label for="c-offer">Оффер</label>
+            <span class="hint-wrap">
+              <button class="hint" type="button" aria-describedby="hint-c-offer" aria-label="Пояснение к выбору оффера">?</button>
+              <span class="hint__bubble" id="hint-c-offer" role="tooltip">Начните вводить название или ID — появится автоподбор по базе Keitaro.</span>
+            </span>
+          </div>
           <div class="combo">
             <svg class="icon combo__icon" aria-hidden="true"><use href="#i-search"/></svg>
             <input id="c-offer" type="text" class="combo-input" required placeholder="Название или ID оффера"
@@ -82,7 +98,6 @@
               aria-autocomplete="list" aria-controls="combo-list-offer">
             <ul class="combo-list" id="combo-list-offer" role="listbox" hidden></ul>
           </div>
-          <p class="field__hint">Начните вводить название — появится автоподбор.</p>
         </div>
         <div class="field field--span-4">
           <label for="c-domain">Домен</label>
@@ -115,7 +130,13 @@
     </header>
     <div class="form-grid card__section">
       <div class="field field--span-5">
-        <label for="e-id">Кампания</label>
+        <div class="field__label">
+          <label for="e-id">Кампания</label>
+          <span class="hint-wrap">
+            <button class="hint" type="button" aria-describedby="hint-e-id" aria-label="Пояснение к выбору кампании">?</button>
+            <span class="hint__bubble" id="hint-e-id" role="tooltip">Начните вводить название или ID — появится автоподбор по кампаниям Keitaro.</span>
+          </span>
+        </div>
         <div class="combo">
           <svg class="icon combo__icon" aria-hidden="true"><use href="#i-search"/></svg>
           <input id="e-id" type="text" inputmode="numeric" spellcheck="false" autocomplete="off"
@@ -123,7 +144,6 @@
             aria-autocomplete="list" aria-controls="combo-list-campaign">
           <ul class="combo-list" id="combo-list-campaign" role="listbox" hidden></ul>
         </div>
-        <p class="field__hint">Начните вводить название — появится автоподбор.</p>
       </div>
       <div class="field field--span-3">
         <label for="e-recent">Недавние</label>

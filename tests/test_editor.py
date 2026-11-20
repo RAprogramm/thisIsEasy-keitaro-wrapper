@@ -1,5 +1,7 @@
 """Integration tests for the campaign editor endpoints."""
 
+from typing import Any
+
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
@@ -303,6 +305,50 @@ def test_pin_offer(client: TestClient, fake: FakeKeitaro) -> None:
     pinned = next(o for o in body["streams"][1]["offers"] if o["offer_id"] == 100)
     assert pinned["pinned"] is True
     assert body["streams"][1]["dirty"] is True
+
+
+def test_four_offers_split_evenly_and_pin_survives_restore(
+    client: TestClient, fake: FakeKeitaro
+) -> None:
+    fake.offers_list = [
+        {"id": 100, "name": "offer A"},
+        {"id": 200, "name": "offer B"},
+        {"id": 300, "name": "offer C"},
+        {"id": 400, "name": "offer D"},
+    ]
+    seed_campaign(fake)
+    fake.streams[1000][1]["offers"] = [
+        {"offer_id": 100, "share": 34, "state": "active"},
+        {"offer_id": 200, "share": 33, "state": "active"},
+        {"offer_id": 300, "share": 33, "state": "active"},
+    ]
+
+    def shares(body: dict[str, Any]) -> dict[int, int]:
+        return {o["offer_id"]: o["share"] for o in body["streams"][1]["offers"]}
+
+    client.get("/api/campaigns/1000")
+    body = client.post("/api/campaigns/1000/offers", json={"offer_id": 400}).json()
+    assert shares(body) == {100: 25, 200: 25, 300: 25, 400: 25}
+    assert body["streams"][1]["dirty"] is True
+
+    client.post("/api/campaigns/1000/push?stream_id=2")
+    client.post("/api/campaigns/1000/offers/100/pin?stream_id=2&pinned=true")
+    body = client.delete("/api/campaigns/1000/offers/200?stream_id=2").json()
+    assert shares(body)[100] == 25
+    assert sorted([shares(body)[300], shares(body)[400]]) == [37, 38]
+
+    client.post("/api/campaigns/1000/push?stream_id=2")
+    body = client.post("/api/campaigns/1000/offers/200/restore?stream_id=2").json()
+    assert shares(body) == {100: 25, 200: 25, 300: 25, 400: 25}
+
+    body = client.post("/api/campaigns/1000/push?stream_id=2").json()
+    assert body["streams"][1]["dirty"] is False
+    assert {o["offer_id"]: o["share"] for o in fake.streams[1000][1]["offers"]} == {
+        100: 25,
+        200: 25,
+        300: 25,
+        400: 25,
+    }
 
 
 def test_pin_unknown_offer_is_404(client: TestClient, fake: FakeKeitaro) -> None:
