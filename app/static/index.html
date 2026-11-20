@@ -2,46 +2,66 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Keitaro wrapper</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%23222'/%3E%3Ctext x='50' y='70' font-size='58' text-anchor='middle' fill='white' font-family='system-ui'%3EK%3C/text%3E%3C/svg%3E">
 <style>
-  body { font-family: system-ui, sans-serif; max-width: 1100px; margin: 2rem auto; padding: 0 1rem; color: #222; }
-  h1 { margin-bottom: 0.5rem; }
-  nav { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
-  nav button { padding: 0.4rem 0.8rem; border: 1px solid #ccc; background: #f7f7f7; cursor: pointer; border-radius: 4px; }
-  nav button.active { background: #222; color: #fff; border-color: #222; }
-  .card { border: 1px solid #ddd; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; background: #fff; }
+  :root { --gap: 1rem; --radius: 8px; --line: #ddd; --ink: #222; --muted: #888; }
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, sans-serif; max-width: 1100px; margin: 0 auto; padding: 1.5rem 1rem 3rem; color: var(--ink); }
+  h1 { margin: 0 0 1rem; font-size: 1.5rem; }
+  h2 { font-size: 1.2rem; margin: 1.5rem 0 .75rem; }
+  nav { display: flex; gap: .5rem; margin-bottom: 1.25rem; flex-wrap: wrap; }
+  nav button { padding: .5rem 1rem; border: 1px solid #ccc; background: #f7f7f7; cursor: pointer; border-radius: 6px; font-size: .95rem; }
+  nav button:hover { background: #ececec; }
+  nav button.active { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .card { border: 1px solid var(--line); border-radius: var(--radius); padding: 1.25rem; margin-bottom: 1.25rem; background: #fff; }
   .card.dirty { border-color: #e6a700; background: #fffbe6; }
-  .row { display: flex; gap: 1rem; flex-wrap: wrap; align-items: end; }
-  .row > div { flex: 1 1 200px; }
-  label { display: block; font-size: 0.85rem; color: #555; margin-bottom: 0.25rem; }
-  input, select { width: 100%; padding: 0.4rem; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
-  button.primary { background: #222; color: #fff; border: none; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; }
-  button.danger { background: #c0392b; color: #fff; border: none; padding: 0.3rem 0.6rem; border-radius: 4px; cursor: pointer; }
-  button.restore { background: #27ae60; color: #fff; border: none; padding: 0.3rem 0.6rem; border-radius: 4px; cursor: pointer; }
-  button:disabled { opacity: 0.5; cursor: not-allowed; }
-  table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; }
-  th, td { border-bottom: 1px solid #eee; padding: 0.4rem; text-align: left; font-size: 0.9rem; }
-  th { color: #555; }
-  .muted { color: #888; font-size: 0.85rem; }
-  .msg { padding: 0.5rem 0.75rem; border-radius: 4px; margin-top: 0.5rem; }
+  .row { display: flex; gap: var(--gap); flex-wrap: wrap; align-items: end; margin-bottom: .25rem; }
+  .row > div { flex: 1 1 220px; min-width: 0; }
+  label { display: block; font-size: .85rem; color: #555; margin-bottom: .3rem; }
+  input, select { width: 100%; padding: .5rem .6rem; border: 1px solid #ccc; border-radius: 6px; font-size: .95rem; }
+  input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px solid #4b7bec; outline-offset: 1px; }
+  button { font: inherit; cursor: pointer; }
+  button.primary { background: var(--ink); color: #fff; border: none; padding: .55rem 1.1rem; border-radius: 6px; }
+  button.primary:hover { background: #000; }
+  button.danger { background: #c0392b; color: #fff; border: none; padding: .35rem .7rem; border-radius: 6px; font-size: .85rem; }
+  button.danger:hover { background: #a93226; }
+  button.restore { background: #27ae60; color: #fff; border: none; padding: .35rem .7rem; border-radius: 6px; font-size: .85rem; }
+  button.restore:hover { background: #1e8449; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .table-wrap { overflow-x: auto; margin-top: .75rem; }
+  table { width: 100%; border-collapse: collapse; min-width: 860px; }
+  th, td { border-bottom: 1px solid #eee; padding: .5rem .6rem; text-align: left; font-size: .9rem; white-space: nowrap; }
+  th { color: #555; font-weight: 600; }
+  td:first-child { white-space: normal; min-width: 160px; }
+  .muted { color: var(--muted); font-size: .85rem; }
+  .msg { padding: .6rem .8rem; border-radius: 6px; margin-top: .75rem; }
   .msg.ok { background: #e8f5e9; color: #1b5e20; }
   .msg.err { background: #fdecea; color: #b71c1c; }
   .hidden { display: none; }
   tr.removed { background: #f2f2f2; color: #999; }
   tr.removed td { text-decoration: line-through; }
-  .badge { display: inline-block; padding: 0.1rem 0.4rem; border-radius: 3px; font-size: 0.75rem; }
+  .badge { display: inline-block; padding: .15rem .45rem; border-radius: 4px; font-size: .75rem; }
   .badge.pending { background: #fff3cd; color: #856404; }
   .badge.removed { background: #e2e3e5; color: #383d41; }
-  .actions { display: flex; gap: 0.4rem; align-items: center; }
+  .actions { display: flex; gap: .4rem; align-items: center; }
   .combo { position: relative; }
   .combo-list { position: absolute; z-index: 10; top: calc(100% + 2px); left: 0; right: 0; margin: 0; padding: 0;
-    list-style: none; background: #fff; border: 1px solid #ccc; border-radius: 4px; max-height: 240px;
+    list-style: none; background: #fff; border: 1px solid #ccc; border-radius: 6px; max-height: 240px;
     overflow-y: auto; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12); }
-  .combo-list li { padding: 0.4rem 0.6rem; cursor: pointer; font-size: 0.9rem; }
+  .combo-list li { padding: .5rem .7rem; cursor: pointer; font-size: .9rem; }
   .combo-list li.active { background: #eef3ff; }
   .combo-list li mark { background: #ffe9a8; color: inherit; padding: 0; }
   .combo-list li.combo-empty { color: #888; cursor: default; }
+  .add-offer { margin-top: 1rem; }
+  @media (max-width: 720px) {
+    body { padding: 1rem .75rem 2rem; }
+    .card { padding: 1rem; }
+    .row > div { flex-basis: 100%; }
+    button.primary, .row > button { width: 100%; }
+    .actions button { padding: .5rem .9rem; }
+  }
 </style>
 </head>
 <body>
@@ -153,7 +173,7 @@ function render() {
     const dirtyCls = s.dirty ? 'dirty' : '';
     html += `<div class="card ${dirtyCls}"><strong>${esc(s.name || 'Поток')}</strong> <span class="muted">· ${esc(s.schema)}</span>${s.dirty ? ' <span class="badge pending">не опубликован</span>' : ''}`;
     if (!isOffers) { html += `<p class="muted">Редирект, офферов нет.</p></div>`; continue; }
-    html += `<table><thead><tr><th>Оффер</th><th>Доля, %</th><th>Статус</th><th>Закреп.</th><th>Клики</th><th>Уники</th><th>Конверсии</th><th>Доход</th><th>Расход</th><th>Профит</th><th></th></tr></thead><tbody>`;
+    html += `<div class="table-wrap"><table><thead><tr><th>Оффер</th><th>Доля, %</th><th>Статус</th><th>Закреп.</th><th>Клики</th><th>Уники</th><th>Конверсии</th><th>Доход</th><th>Расход</th><th>Профит</th><th></th></tr></thead><tbody>`;
     for (const o of s.offers) {
       const st = o.stats || {};
       const removed = o.status === 'removed';
@@ -175,8 +195,8 @@ function render() {
             : staged ? '' : `<button class="danger" data-del="${o.offer_id}" data-stream="${s.id}">Удалить</button>`}
         </td></tr>`;
     }
-    html += `</tbody></table>
-      <div class="row" style="margin-top:12px;align-items:end">
+    html += `</tbody></table></div>
+      <div class="row add-offer">
         <div><label>Добавить оффер</label>
           <div class="combo">
             <input type="text" class="combo-input" data-combo="${s.id}" autocomplete="off" spellcheck="false"
@@ -185,10 +205,10 @@ function render() {
             <ul class="combo-list" id="combo-list-${s.id}" role="listbox" hidden></ul>
           </div>
         </div>
-        <div><button class="primary" style="margin-top:0" data-add="${s.id}">Добавить</button></div>
+        <div><button class="primary" data-add="${s.id}">Добавить</button></div>
       </div>`;
     if (s.dirty) {
-      html += `<div class="row" style="margin-top:12px">
+      html += `<div class="row add-offer">
         <button class="primary" data-push="${s.id}">Опубликовать</button>
         <button data-cancel="${s.id}">Отменить</button>
       </div>`;

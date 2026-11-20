@@ -19,6 +19,22 @@ The frontend is a single HTML page served by the same app — no build step.
 
 ## Quick start
 
+**Option A — Docker (nothing to install locally):**
+
+```bash
+git clone https://github.com/RAprogramm/thisIsEasy-keitaro-wrapper.git
+cd thisIsEasy-keitaro-wrapper
+cp .env.example .env        # set KEITARO_API_KEY (the key from the Keitaro admin panel)
+docker compose up -d --build
+```
+
+This starts PostgreSQL 17 and the app; migrations apply automatically on container start.
+Open http://localhost:8000, Swagger at http://localhost:8000/docs.
+
+**Option B — local run (Python 3.14+ and PostgreSQL):**
+
+`uv` provisions the interpreter automatically, so only PostgreSQL must already be running:
+
 ```bash
 git clone https://github.com/RAprogramm/thisIsEasy-keitaro-wrapper.git
 cd thisIsEasy-keitaro-wrapper
@@ -37,9 +53,6 @@ Shortcut: `make run` (runs `python -m app`) after `make migrate`.
 Without uv: `pip install -r requirements.txt` (pinned runtime dependencies) and run the
 same commands without the `uv run` prefix.
 
-Prefer containers? `docker compose up -d --build` starts Postgres and the app together —
-see [Deployment](#deployment).
-
 ## Settings (`.env`)
 
 | Variable | Purpose |
@@ -48,7 +61,7 @@ see [Deployment](#deployment).
 | `KEITARO_API_KEY` | API key (never commit it) |
 | `KEITARO_TIMEOUT` | per-request timeout in seconds, default `30` |
 | `DATABASE_URL` | SQLAlchemy connection string, default `postgresql+psycopg:///keitaro` |
-| `CAMPAIGN_PREFIX` | campaign name prefix, `test_surname_` |
+| `CAMPAIGN_PREFIX` | campaign name prefix; the task asks for `test_surname_`, this repo ships `test_rozanov_` |
 | `GOOGLE_URL` | where the "geo → Google" stream redirects to |
 | `DICTIONARIES_TTL` | lifetime of the cached dictionaries response, seconds, default `60` |
 | `RATE_LIMIT_PER_MINUTE` | mutating requests per client IP per minute, default `120` |
