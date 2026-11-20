@@ -19,49 +19,41 @@ The frontend is a single HTML page served by the same app — no build step.
 [![codecov](https://codecov.io/gh/RAprogramm/thisIsEasy-keitaro-wrapper/graph/badge.svg)](https://codecov.io/gh/RAprogramm/thisIsEasy-keitaro-wrapper)
 [![wakatime](https://wakatime.com/badge/github/RAprogramm/thisIsEasy-keitaro-wrapper.svg)](https://wakatime.com/badge/github/RAprogramm/thisIsEasy-keitaro-wrapper)
 
-## Requirements
-
-- Python 3.14+ (tested on 3.14 and 3.15)
-- PostgreSQL 14+ (tested on 17)
-- [uv](https://docs.astral.sh/uv/) (recommended) or pip
-
 ## Quick start
 
-**Option A — Docker (nothing to install locally):**
+**A — Docker** (nothing to install except Docker):
 
 ```bash
 git clone https://github.com/RAprogramm/thisIsEasy-keitaro-wrapper.git
 cd thisIsEasy-keitaro-wrapper
-cp .env.example .env        # set KEITARO_API_KEY (the key from the Keitaro admin panel)
+cp .env.example .env        # put your KEITARO_API_KEY in it
 docker compose up -d --build
 ```
 
-This starts PostgreSQL 17 and the app; migrations apply automatically on container start.
-Open http://localhost:8000, Swagger at http://localhost:8000/docs.
+PostgreSQL 17 starts next to the app and migrations apply on container start.
+App: <http://localhost:8000> · Swagger: <http://localhost:8000/docs>
 
-**Option B — local run (Python 3.14+ and PostgreSQL):**
-
-`uv` provisions the interpreter automatically, so only PostgreSQL must already be running:
+**B — local with make** (needs [uv](https://docs.astral.sh/uv/) and a running PostgreSQL):
 
 ```bash
 git clone https://github.com/RAprogramm/thisIsEasy-keitaro-wrapper.git
 cd thisIsEasy-keitaro-wrapper
-createdb keitaro
-uv sync
-
-cp .env.example .env        # set KEITARO_API_KEY (the key from the Keitaro admin panel)
-uv run alembic upgrade head
-uv run uvicorn app.main:app --reload
+cp .env.example .env        # put your KEITARO_API_KEY in it
+make setup                  # dependencies + local databases + migrations
+make run                    # http://localhost:8000
 ```
 
-Open http://localhost:8000, Swagger at http://localhost:8000/docs.
+**Verify the code quality** (needs uv and PostgreSQL, works after `make setup`):
 
-Shortcut: `make run` (runs `python -m app`) after `make migrate`.
+```bash
+make verify                 # all linters + tests with a 100% coverage gate
+```
 
 Without uv: `pip install -r requirements.txt` (pinned runtime dependencies) and run the
 same commands without the `uv run` prefix.
 
-## Settings (`.env`)
+<details>
+<summary><h2>Settings (`.env`)</h2></summary>
 
 | Variable | Purpose |
 |---|---|
@@ -78,7 +70,10 @@ same commands without the `uv run` prefix.
 | `DB_POOL_SIZE` / `DB_MAX_OVERFLOW` | SQLAlchemy pool size and overflow, defaults `5` / `10` |
 | `DB_POOL_TIMEOUT` / `DB_POOL_RECYCLE` | pool checkout timeout and connection recycle, seconds, defaults `30` / `1800` |
 
-## API
+</details>
+
+<details>
+<summary><h2>API</h2></summary>
 
 | Method | Path | Description |
 |---|---|---|
@@ -97,7 +92,10 @@ same commands without the `uv run` prefix.
 | GET | `/healthz` | liveness probe for deploy and monitoring |
 | GET | `/readyz` | readiness probe; also checks the database connection |
 
-## How it works
+</details>
+
+<details>
+<summary><h2>How it works</h2></summary>
 
 The creator sends three objects to Keitaro: a campaign (`type: position`, with domain,
 group and traffic source), then two streams. Keitaro evaluates streams by position, so
@@ -119,7 +117,10 @@ The local database stores only what this service itself produces: `campaigns` (c
 through the creator) and `offer_changes` (the add/remove journal). Campaign configuration
 and statistics live in Keitaro and are never duplicated.
 
-## Design decisions
+</details>
+
+<details>
+<summary><h2>Design decisions</h2></summary>
 
 - **Keitaro is the source of truth.** The wrapper reads and mutates the tracker state
   directly; the local tables are a journal, not a cache, so they cannot go stale.
@@ -131,12 +132,19 @@ and statistics live in Keitaro and are never duplicated.
   plausible zeros.
 - **The last offer of a stream cannot be removed** — a landings stream without offers is
   a broken campaign.
+- **Share invariants are enforced before anything is written.** Pinned shares can never
+  lock more than 100%, a removal that would leave only pinned shares below 100% is
+  rejected, and a stream whose active shares do not add up to 100% is never published —
+  Keitaro cannot receive a broken split.
 - **Defaults are explicit.** If no domain/group/source is chosen, the first dictionary
   entry is used and the response reports exactly which IDs were applied.
 - **Guards before writes.** Unknown offer, unknown dictionary ID, duplicate offer and
   missing stream are all rejected before anything is created in Keitaro.
 
-## Limitations
+</details>
+
+<details>
+<summary><h2>Limitations</h2></summary>
 
 - **No authentication.** Anyone who can reach the port can create and modify campaigns
   in Keitaro; run it on a trusted network or behind a reverse proxy that adds auth.
@@ -147,7 +155,10 @@ and statistics live in Keitaro and are never duplicated.
   but the calls inside one request are awaited in sequence, not in parallel; 30 s
   timeout per call, upstream failures map to 502.
 
-## Scaling & state
+</details>
+
+<details>
+<summary><h2>Scaling & state</h2></summary>
 
 The service runs as a single process and keeps two pieces of state in memory:
 
@@ -169,7 +180,10 @@ stops being acceptable, the migration path is deliberately boring:
 - adopt either only after measuring hit rate, p99 and Keitaro request volume per
   replica — evidence, not speculation.
 
-## Deployment
+</details>
+
+<details>
+<summary><h2>Deployment</h2></summary>
 
 ```bash
 docker compose up -d --build   # postgres:17 + the app; migrations apply on start
@@ -181,24 +195,29 @@ project root, so create it first, as in the quick start.
 The image is `python:3.14-slim` based, installs dependencies from `uv.lock`, runs as a
 non-root user and reports health through `/healthz`.
 
-## Development
+</details>
+
+<details>
+<summary><h2>Development</h2></summary>
 
 ```bash
-uv sync
-make test          # pytest with coverage, must stay at 100%
-make lint          # ruff + mypy + yamllint + deptry + typos
-make migrate       # alembic upgrade head
-uv run alembic check                       # migrations match the models
-make requirements  # re-export requirements.txt from uv.lock
-make audit         # pip-audit against the locked environment
+make setup           # dependencies + local databases + migrations
+make run             # run the app locally
+make test            # pytest with coverage, must stay at 100%
+make lint            # ruff + mypy + yamllint + deptry + typos
+make verify          # lint + test in one command
+uv run alembic check # migrations match the models
+make requirements    # re-export requirements.txt from uv.lock
+make audit           # pip-audit against the locked environment
 ```
 
 Tests never touch the Keitaro network: HTTP is mocked with `respx`, endpoints run against
 an in-process `FakeKeitaro`, and `pytest-socket` blocks all external sockets. Tests use
 the database from `TEST_DATABASE_URL` (default `postgresql+psycopg:///keitaro_test`) and
 never read `DATABASE_URL`, so a stray environment variable cannot point them at the
-working database; CI runs them against a `postgres:17` service. CI also applies all
-migrations to a fresh database and fails on any drift between them and the models.
+working database; CI runs them against a `postgres:17` service. CI runs on every push and
+pull request and also applies all migrations to a fresh database, failing on any drift
+between them and the models.
 `db/schema.sql` and `db/queries.sql` mirror the ORM schema and the queries the app issues;
 CI analyzes them with [sql-query-analyzer](https://github.com/RAprogramm/sql-query-analyzer).
 CI also re-exports `requirements.txt` from `uv.lock` and fails if the two have drifted.
@@ -209,6 +228,8 @@ CI runs the suite on Python 3.14 and 3.15. Coverage is pinned to the `sysmon` co
 in `[tool.coverage.run]` — the modern core that is the default on Python 3.14+; the legacy
 `settrace` cores report lines executed after an `await` as missing
 ([coveragepy#2245](https://github.com/coveragepy/coveragepy/issues/2245)).
+
+</details>
 
 ## AI usage
 
