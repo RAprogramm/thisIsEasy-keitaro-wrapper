@@ -89,9 +89,8 @@ def _offer_stream_payload(campaign_id: int, offer_id: int) -> dict[str, Any]:
     }
 
 
-@router.get("/dictionaries")
-async def dictionaries(k: Tracker) -> Dictionaries:
-    """Dictionaries for the form: domains, groups, sources, offers."""
+async def _load_dictionaries(k: KeitaroClient) -> Dictionaries:
+    """Fetch all dictionaries through the shared TTL cache."""
 
     async def fetch() -> Dictionaries:
         return Dictionaries(
@@ -104,6 +103,30 @@ async def dictionaries(k: Tracker) -> Dictionaries:
         )
 
     return await _dictionaries_cache.aget_or_set(fetch)
+
+
+@router.get("/dictionaries")
+async def dictionaries(k: Tracker) -> Dictionaries:
+    """Dictionaries for the form: domains, groups, sources, offers."""
+    return await _load_dictionaries(k)
+
+
+@router.get("/offers/search")
+async def search_offers(
+    k: Tracker,
+    q: Annotated[str, Query(max_length=100)] = "",
+    limit: Annotated[int, Query(ge=1, le=50)] = 20,
+) -> list[DictItem]:
+    """Search offers by name or exact ID for the editor autocomplete."""
+    offers = (await _load_dictionaries(k)).offers
+    needle = q.strip().casefold()
+    if not needle:
+        return offers[:limit]
+    if needle.isascii() and needle.isdigit():
+        exact = [o for o in offers if str(o.id) == needle]
+        if exact:
+            return exact
+    return [o for o in offers if needle in o.name.casefold()][:limit]
 
 
 @router.post("/campaigns", status_code=201)

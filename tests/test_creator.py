@@ -16,6 +16,49 @@ def test_dictionaries(client: TestClient) -> None:
     assert body["sources"][0]["id"] == 20
 
 
+def test_search_offers_empty_query_returns_head(client: TestClient) -> None:
+    body = client.get("/api/offers/search").json()
+    assert [o["id"] for o in body] == [100, 200]
+
+
+def test_search_offers_blank_query_returns_head(client: TestClient) -> None:
+    body = client.get("/api/offers/search", params={"q": "   "}).json()
+    assert [o["id"] for o in body] == [100, 200]
+
+
+def test_search_offers_by_name_case_insensitive(client: TestClient) -> None:
+    body = client.get("/api/offers/search", params={"q": " OFFER a"}).json()
+    assert [o["id"] for o in body] == [100]
+
+
+def test_search_offers_by_exact_id(client: TestClient, fake: FakeKeitaro) -> None:
+    fake.offers_list.append({"id": 7, "name": "lucky seven"})
+    body = client.get("/api/offers/search", params={"q": "7"}).json()
+    assert [o["id"] for o in body] == [7]
+
+
+def test_search_offers_numeric_without_id_falls_back_to_name(
+    client: TestClient, fake: FakeKeitaro
+) -> None:
+    fake.offers_list.append({"id": 55, "name": "deal 999"})
+    body = client.get("/api/offers/search", params={"q": "999"}).json()
+    assert [o["id"] for o in body] == [55]
+
+
+def test_search_offers_no_match(client: TestClient) -> None:
+    assert client.get("/api/offers/search", params={"q": "zzz"}).json() == []
+
+
+def test_search_offers_respects_limit(client: TestClient) -> None:
+    body = client.get("/api/offers/search", params={"limit": 1}).json()
+    assert len(body) == 1
+
+
+def test_search_offers_validates_params(client: TestClient) -> None:
+    assert client.get("/api/offers/search", params={"limit": 0}).status_code == 422
+    assert client.get("/api/offers/search", params={"q": "x" * 101}).status_code == 422
+
+
 def test_create_uses_first_dictionary_entries(client: TestClient) -> None:
     r = client.post("/api/campaigns", json={"name": "c1", "geo": "de", "offer_id": 100})
     assert r.status_code == 201

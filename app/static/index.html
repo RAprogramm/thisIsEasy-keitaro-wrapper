@@ -33,6 +33,14 @@
   .badge.pending { background: #fff3cd; color: #856404; }
   .badge.removed { background: #e2e3e5; color: #383d41; }
   .actions { display: flex; gap: 0.4rem; align-items: center; }
+  .combo { position: relative; }
+  .combo-list { position: absolute; z-index: 10; top: calc(100% + 2px); left: 0; right: 0; margin: 0; padding: 0;
+    list-style: none; background: #fff; border: 1px solid #ccc; border-radius: 4px; max-height: 240px;
+    overflow-y: auto; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12); }
+  .combo-list li { padding: 0.4rem 0.6rem; cursor: pointer; font-size: 0.9rem; }
+  .combo-list li.active { background: #eef3ff; }
+  .combo-list li mark { background: #ffe9a8; color: inherit; padding: 0; }
+  .combo-list li.combo-empty { color: #888; cursor: default; }
 </style>
 </head>
 <body>
@@ -148,7 +156,8 @@ function render() {
     for (const o of s.offers) {
       const st = o.stats || {};
       const removed = o.status === 'removed';
-      const rowCls = removed ? 'removed' : '';
+      const staged = removed || o.status === 'pending_remove';
+      const rowCls = staged ? 'removed' : '';
       const statusBadge = o.status === 'pending_add' ? '<span class="badge pending">новый</span>'
         : o.status === 'pending_remove' ? '<span class="badge pending">к удалению</span>'
         : o.status === 'removed' ? '<span class="badge removed">архив</span>' : '';
@@ -156,20 +165,25 @@ function render() {
         <td>${esc(o.name)} <span class="muted">#${o.offer_id}</span></td>
         <td>${o.share}</td>
         <td>${statusBadge}</td>
-        <td><input type="checkbox" data-pin="${o.offer_id}" data-stream="${s.id}" ${o.pinned ? 'checked' : ''} ${removed ? 'disabled' : ''}></td>
+        <td><input type="checkbox" data-pin="${o.offer_id}" data-stream="${s.id}" ${o.pinned ? 'checked' : ''} ${staged ? 'disabled' : ''}></td>
         <td>${fmt(st.clicks)}</td><td>${fmt(st.unique_clicks)}</td><td>${fmt(st.conversions)}</td>
         <td>${fmt(st.revenue)}</td><td>${fmt(st.cost)}</td><td>${fmt(st.profit)}</td>
         <td class="actions">
           ${removed
             ? `<button class="restore" data-restore="${o.offer_id}" data-stream="${s.id}">Вернуть</button>`
-            : `<button class="danger" data-del="${o.offer_id}" data-stream="${s.id}">Удалить</button>`}
+            : staged ? '' : `<button class="danger" data-del="${o.offer_id}" data-stream="${s.id}">Удалить</button>`}
         </td></tr>`;
     }
-    const used = new Set(s.offers.filter(o => o.status !== 'removed').map(o => o.offer_id));
-    const free = dict.offers.filter(o => !used.has(o.id));
     html += `</tbody></table>
       <div class="row" style="margin-top:12px;align-items:end">
-        <div><label>Добавить оффер</label><select id="add-sel-${s.id}">${free.map(o => `<option value="${o.id}">${esc(o.name)} (#${o.id})</option>`).join('')}</select></div>
+        <div><label>Добавить оффер</label>
+          <div class="combo">
+            <input type="text" class="combo-input" data-combo="${s.id}" autocomplete="off" spellcheck="false"
+              role="combobox" aria-expanded="false" aria-autocomplete="list" aria-controls="combo-list-${s.id}"
+              placeholder="Название или ID оффера">
+            <ul class="combo-list" id="combo-list-${s.id}" role="listbox" hidden></ul>
+          </div>
+        </div>
         <div><button class="primary" style="margin-top:0" data-add="${s.id}">Добавить</button></div>
       </div>`;
     if (s.dirty) {
@@ -183,7 +197,8 @@ function render() {
   $('e-body').innerHTML = html;
 
   $('e-body').querySelectorAll('[data-del]').forEach(b => b.onclick = () => changeOffer('DELETE', b, b.dataset.del, b.dataset.stream));
-  $('e-body').querySelectorAll('[data-add]').forEach(b => b.onclick = () => changeOffer('POST', b, $('add-sel-' + b.dataset.add).value, b.dataset.add));
+  $('e-body').querySelectorAll('[data-add]').forEach(b => b.onclick = () => addFromCombo(b.dataset.add));
+  $('e-body').querySelectorAll('[data-combo]').forEach(initCombo);
   $('e-body').querySelectorAll('[data-restore]').forEach(b => b.onclick = () => restoreOffer(b, b.dataset.restore, b.dataset.stream));
   $('e-body').querySelectorAll('[data-push]').forEach(b => b.onclick = () => pushStream(b, b.dataset.push));
   $('e-body').querySelectorAll('[data-cancel]').forEach(b => b.onclick = () => cancelStream(b, b.dataset.cancel));
@@ -242,6 +257,127 @@ async function pinOffer(cb, offerId, streamId, pinned) {
     $('e-msg').innerHTML = '';
     render();
   } catch (e) { show($('e-msg'), e.message, false); cb.checked = !pinned; }
+}
+
+const COMBO_DEBOUNCE_MS = 150;
+const COMBO_LIMIT = 20;
+
+function comboStream(streamId) {
+  return currentCampaign.streams.find(s => String(s.id) === String(streamId));
+}
+
+function appendHighlighted(li, name, needle) {
+  const idx = needle ? name.toLowerCase().indexOf(needle) : -1;
+  if (idx < 0) { li.append(document.createTextNode(name)); return; }
+  li.append(document.createTextNode(name.slice(0, idx)));
+  const mark = document.createElement('mark');
+  mark.textContent = name.slice(idx, idx + needle.length);
+  li.append(mark, document.createTextNode(name.slice(idx + needle.length)));
+}
+
+function closeCombo(ui) {
+  ui.list.hidden = true;
+  ui.input.setAttribute('aria-expanded', 'false');
+  ui.input.removeAttribute('aria-activedescendant');
+  ui.active = -1;
+}
+
+function renderComboOptions(ui, items) {
+  ui.items = items;
+  ui.list.innerHTML = '';
+  if (!items.length) {
+    const li = document.createElement('li');
+    li.className = 'combo-empty';
+    li.setAttribute('role', 'option');
+    li.setAttribute('aria-disabled', 'true');
+    li.textContent = 'Ничего не найдено';
+    ui.list.append(li);
+  }
+  const needle = ui.query.trim().toLowerCase();
+  for (const it of items) {
+    const li = document.createElement('li');
+    li.setAttribute('role', 'option');
+    li.id = `${ui.list.id}-opt-${it.id}`;
+    li.dataset.offerId = it.id;
+    appendHighlighted(li, it.name, needle);
+    const idSpan = document.createElement('span');
+    idSpan.className = 'muted';
+    idSpan.textContent = ` #${it.id}`;
+    li.append(idSpan);
+    li.onmousedown = (e) => { e.preventDefault(); selectComboOption(ui, it); };
+    ui.list.append(li);
+  }
+  ui.list.hidden = false;
+  ui.input.setAttribute('aria-expanded', 'true');
+  ui.active = -1;
+}
+
+async function fetchComboOptions(ui) {
+  const query = ui.query;
+  let rows;
+  try {
+    rows = await api(`/api/offers/search?q=${encodeURIComponent(query)}&limit=${COMBO_LIMIT}`);
+  } catch (e) { return; }
+  if (ui.query !== query) return;
+  const used = new Set((comboStream(ui.streamId)?.offers ?? []).filter(o => o.status !== 'removed').map(o => o.offer_id));
+  renderComboOptions(ui, rows.filter(o => !used.has(o.id)));
+}
+
+function selectComboOption(ui, it) {
+  ui.input.value = `${it.name} (#${it.id})`;
+  ui.input.dataset.offerId = it.id;
+  closeCombo(ui);
+}
+
+function moveComboActive(ui, delta) {
+  const opts = [...ui.list.querySelectorAll('li[data-offer-id]')];
+  if (!opts.length) return;
+  ui.active = (ui.active + delta + opts.length) % opts.length;
+  opts.forEach((li, i) => li.classList.toggle('active', i === ui.active));
+  ui.input.setAttribute('aria-activedescendant', opts[ui.active].id);
+  opts[ui.active].scrollIntoView({ block: 'nearest' });
+}
+
+function initCombo(input) {
+  const ui = {
+    input,
+    list: $('combo-list-' + input.dataset.combo),
+    streamId: input.dataset.combo,
+    query: '',
+    items: [],
+    active: -1,
+    timer: 0,
+  };
+  input.onfocus = () => { ui.query = ''; fetchComboOptions(ui); };
+  input.oninput = () => {
+    ui.query = input.value;
+    input.dataset.offerId = '';
+    clearTimeout(ui.timer);
+    ui.timer = setTimeout(() => fetchComboOptions(ui), COMBO_DEBOUNCE_MS);
+  };
+  input.onkeydown = (e) => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (ui.list.hidden) fetchComboOptions(ui);
+      else moveComboActive(ui, e.key === 'ArrowDown' ? 1 : -1);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (!ui.list.hidden && ui.active >= 0) selectComboOption(ui, ui.items[ui.active]);
+    } else if (e.key === 'Escape') {
+      closeCombo(ui);
+    } else if (e.key === 'Tab') {
+      closeCombo(ui);
+    }
+  };
+  input.onblur = () => closeCombo(ui);
+}
+
+function addFromCombo(streamId) {
+  const input = $('e-body').querySelector(`[data-combo="${streamId}"]`);
+  const typed = input.value.trim();
+  const offerId = input.dataset.offerId || (/^\d+$/.test(typed) ? typed : '');
+  if (!offerId) return show($('e-msg'), 'Выберите оффер из списка или введите его ID', false);
+  changeOffer('POST', input, offerId, streamId);
 }
 
 $('tab-create').onclick = () => switchTab('create');

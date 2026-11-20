@@ -271,6 +271,16 @@ def test_pin_unknown_offer_is_404(client: TestClient, fake: FakeKeitaro) -> None
     assert r.status_code == 404
 
 
+def test_pin_pending_remove_offer_is_404(client: TestClient, fake: FakeKeitaro) -> None:
+    seed_campaign(fake)
+    fake.streams[1000][1]["offers"].append(
+        {"offer_id": 200, "share": 0, "state": "active"}
+    )
+    client.delete("/api/campaigns/1000/offers/200")
+    r = client.post("/api/campaigns/1000/offers/200/pin?stream_id=2&pinned=true")
+    assert r.status_code == 404
+
+
 def test_sync_marks_vanished_as_removed(client: TestClient, fake: FakeKeitaro) -> None:
     seed_campaign(fake)
     # Track 200 locally as active.

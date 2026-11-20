@@ -397,7 +397,7 @@ async def pin_offer(
 
     rows = await _local_offers(db, campaign_id, sid)
     target = next((r for r in rows if r.offer_id == offer_id), None)
-    if target is None or target.status == OfferStatus.REMOVED:
+    if target is None or target.status in REMOVED_STATUSES:
         raise HTTPException(404, "Оффер не найден в потоке")
     target.pinned = pinned
     _rebalance(rows)
