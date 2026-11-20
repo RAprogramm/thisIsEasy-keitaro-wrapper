@@ -63,6 +63,35 @@ def test_rebalance_removed_gets_zero() -> None:
     assert offers[0].share == 100
 
 
+def test_search_campaigns_by_name(client: TestClient, fake: FakeKeitaro) -> None:
+    seed_campaign(fake)
+    body = client.get("/api/campaigns/search", params={"q": " CAM "}).json()
+    assert [c["id"] for c in body] == [1000]
+
+
+def test_search_campaigns_empty_query_returns_head(
+    client: TestClient, fake: FakeKeitaro
+) -> None:
+    seed_campaign(fake)
+    body = client.get("/api/campaigns/search").json()
+    assert [c["id"] for c in body] == [1000]
+
+
+def test_search_campaigns_by_exact_id(client: TestClient, fake: FakeKeitaro) -> None:
+    seed_campaign(fake)
+    body = client.get("/api/campaigns/search", params={"q": "1000"}).json()
+    assert [c["id"] for c in body] == [1000]
+
+
+def test_search_campaigns_no_match(client: TestClient, fake: FakeKeitaro) -> None:
+    seed_campaign(fake)
+    assert client.get("/api/campaigns/search", params={"q": "zzz"}).json() == []
+
+
+def test_search_campaigns_validates_limit(client: TestClient) -> None:
+    assert client.get("/api/campaigns/search", params={"limit": 0}).status_code == 422
+
+
 def test_get_campaign_merges_stats(client: TestClient, fake: FakeKeitaro) -> None:
     seed_campaign(fake)
     fake.report_rows = [
@@ -77,6 +106,7 @@ def test_get_campaign_merges_stats(client: TestClient, fake: FakeKeitaro) -> Non
         }
     ]
     body = client.get("/api/campaigns/1000").json()
+    assert body["keitaro_url"] == "https://tlgk.host"
     offer = body["streams"][1]["offers"][0]
     assert offer["name"] == "offer A"
     assert offer["stats"]["clicks"] == 5

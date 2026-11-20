@@ -208,6 +208,10 @@ class KeitaroClient:
             KeitaroCampaign, await self._request("GET", f"/campaigns/{campaign_id}")
         )
 
+    async def all_campaigns(self) -> list[KeitaroCampaign]:
+        """All campaigns currently in Keitaro, for the editor picker."""
+        return cast(list[KeitaroCampaign], await self._request("GET", "/campaigns"))
+
     async def delete_campaign(self, campaign_id: int) -> KeitaroCampaign | None:
         return cast(
             KeitaroCampaign, await self._request("DELETE", f"/campaigns/{campaign_id}")

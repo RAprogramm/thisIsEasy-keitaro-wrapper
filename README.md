@@ -77,6 +77,7 @@ same commands without the `uv run` prefix.
 |---|---|---|
 | GET | `/api/dictionaries` | domains, groups, sources, offers |
 | GET | `/api/offers/search` | `?q=&limit=` — offers by name or exact ID, the autocomplete source |
+| GET | `/api/campaigns/search` | `?q=&limit=` — Keitaro campaigns by name or exact ID, the editor picker |
 | POST | `/api/campaigns` | `{name, geo, offer_id, domain_id?, group_id?, source_id?}` — create a campaign |
 | GET | `/api/campaigns` | campaigns created through the creator |
 | GET | `/api/campaigns/{id}` | campaign, its streams, offers and statistics |

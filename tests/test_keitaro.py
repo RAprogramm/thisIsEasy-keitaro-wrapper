@@ -64,6 +64,12 @@ async def test_get_offer_found(httpx2_mock: respx.Router, kc: KeitaroClient) -> 
 
 
 @pytest.mark.anyio
+async def test_all_campaigns(httpx2_mock: respx.Router, kc: KeitaroClient) -> None:
+    httpx2_mock.get(f"{BASE}/campaigns").respond(200, json=[{"id": 1, "name": "c"}])
+    assert await kc.all_campaigns() == [{"id": 1, "name": "c"}]
+
+
+@pytest.mark.anyio
 async def test_get_offer_missing_returns_none(
     httpx2_mock: respx.Router, kc: KeitaroClient
 ) -> None:

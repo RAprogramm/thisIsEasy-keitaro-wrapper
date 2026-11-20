@@ -21,6 +21,7 @@ from app.db import Base, get_db
 from app.keitaro import get_client
 from app.main import app
 from app.routers import creator as creator_router
+from app.routers import editor as editor_router
 
 TEST_DB_URL = os.environ["TEST_DATABASE_URL"]
 
@@ -52,6 +53,7 @@ def _clean_tables() -> Iterator[None]:
 @pytest.fixture(autouse=True)
 def _reset_dictionaries_cache() -> Iterator[None]:
     creator_router._dictionaries_cache = TtlCache(ttl=60.0)
+    editor_router._campaigns_cache = TtlCache(ttl=60.0)
     yield
 
 
@@ -132,6 +134,10 @@ class FakeKeitaro:
     async def get_campaign(self, campaign_id: int) -> dict[str, Any]:
         self._record("get_campaign", campaign_id=campaign_id)
         return self.campaigns[campaign_id]
+
+    async def all_campaigns(self) -> list[dict[str, Any]]:
+        self._record("all_campaigns")
+        return list(self.campaigns.values())
 
     async def campaign_streams(self, campaign_id: int) -> list[dict[str, Any]]:
         self._record("campaign_streams", campaign_id=campaign_id)

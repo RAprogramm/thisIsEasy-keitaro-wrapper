@@ -109,3 +109,4 @@ class CampaignView(BaseModel):
     name: str
     streams: list[StreamView]
     stats_error: str | None = None
+    keitaro_url: str = ""

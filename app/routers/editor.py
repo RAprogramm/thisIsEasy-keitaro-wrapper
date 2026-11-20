@@ -7,10 +7,19 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..cache import TtlCache
+from ..config import settings
 from ..db import get_db
 from ..keitaro import KeitaroClient, get_client
 from ..models import CampaignRecord, OfferChange, OfferStatus, StreamOffer
-from ..schemas import CampaignView, OfferAdd, OfferStats, OfferView, StreamView
+from ..schemas import (
+    CampaignView,
+    DictItem,
+    OfferAdd,
+    OfferStats,
+    OfferView,
+    StreamView,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +30,8 @@ Tracker = Annotated[KeitaroClient, Depends(get_client)]
 
 ACTIVE_STATUSES = (OfferStatus.ACTIVE, OfferStatus.PENDING_ADD)
 REMOVED_STATUSES = (OfferStatus.PENDING_REMOVE, OfferStatus.REMOVED)
+
+_campaigns_cache: TtlCache[list[DictItem]] = TtlCache(ttl=5.0)
 
 
 def _offer_stream(streams: Any, stream_id: int | None) -> dict[str, Any]:
@@ -261,7 +272,34 @@ async def get_campaign(
         name=campaign["name"],
         streams=result_streams,
         stats_error=stats_error,
+        keitaro_url=settings.keitaro_url,
     )
+
+
+@router.get("/search")
+async def search_campaigns(
+    k: Tracker,
+    q: Annotated[str, Query(max_length=100)] = "",
+    limit: Annotated[int, Query(ge=1, le=50)] = 20,
+) -> list[DictItem]:
+    """Search Keitaro campaigns by name or exact ID for the editor picker.
+
+    The full list is cached for a few seconds so a burst of keystrokes
+    produces a single upstream request.
+    """
+
+    async def fetch() -> list[DictItem]:
+        return [DictItem(id=c["id"], name=c["name"]) for c in await k.all_campaigns()]
+
+    items = await _campaigns_cache.aget_or_set(fetch)
+    needle = q.strip().casefold()
+    if not needle:
+        return items[:limit]
+    if needle.isascii() and needle.isdigit():
+        exact = [c for c in items if str(c.id) == needle]
+        if exact:
+            return exact
+    return [c for c in items if needle in c.name.casefold()][:limit]
 
 
 @router.get("/{campaign_id}")
