@@ -62,10 +62,16 @@ class TtlCache[T]:
             and self._value is not None
         ):
             return self._value
-        result = factory()
-        if asyncio.iscoroutine(result):
-            result = await result
-        value = cast(T, result)
+        try:
+            result = factory()
+            if asyncio.iscoroutine(result):
+                result = await result
+            value = cast(T, result)
+        except Exception:
+            if self._value is not None:
+                logger.warning("cache factory failed; returning stale value")
+                return self._value
+            raise
         self._value = value
         self._expires_at = now + self._ttl
         return value

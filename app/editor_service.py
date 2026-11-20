@@ -48,7 +48,9 @@ def rebalance(offers: list[StreamOffer]) -> list[StreamOffer]:
         o.share for o in offers if o.pinned and o.status in ACTIVE_STATUSES
     )
     participants = [o for o in offers if not o.pinned and o.status in ACTIVE_STATUSES]
-    remaining = 100 - pinned_sum
+    # Never hand out negative shares: if pinned offers already fill (or
+    # overfill) the 100%, unpinned participants simply receive nothing.
+    remaining = max(0, 100 - pinned_sum)
     for o in offers:
         if o.status in REMOVED_STATUSES:
             o.share = 0

@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     keitaro_timeout: float = 30.0
     database_url: str = "postgresql+psycopg:///keitaro"
     # Task name prefix: test_surname_
-    campaign_prefix: str = "test_rozanov_"
+    campaign_prefix: str = ""
     # Where the first stream (geo -> Google) redirects to
     google_url: str = "https://www.google.com"
     # Lifetime of the cached /api/dictionaries response, in seconds.

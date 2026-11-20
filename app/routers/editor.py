@@ -122,6 +122,8 @@ async def remove_offer(
         raise HTTPException(404, "Оффера нет в потоке")
     if target.status == OfferStatus.PENDING_ADD:
         await unlog_change(db, campaign_id, offer_id, "add")
+        remaining = [r for r in rows if r is not target]
+        rebalance(remaining)
         await db.delete(target)
         await db.commit()
     else:

@@ -102,14 +102,16 @@ app.include_router(creator.router)
 app.include_router(editor.router)
 
 if settings.cors_origins:  # pragma: no cover
+    origins = [  # pragma: no cover
+        o.strip() for o in settings.cors_origins.split(",") if o.strip()
+    ]  # pragma: no cover
+    # A wildcard origin is incompatible with credentialed requests in browsers;
+    # drop credentials in that case instead of emitting an invalid combination.
+    allow_credentials = "*" not in origins  # pragma: no cover
     app.add_middleware(  # pragma: no cover
         CORSMiddleware,  # pragma: no cover
-        allow_origins=[  # pragma: no cover
-            o.strip()
-            for o in settings.cors_origins.split(",")
-            if o.strip()  # pragma: no cover
-        ],  # pragma: no cover
-        allow_credentials=True,  # pragma: no cover
+        allow_origins=origins,  # pragma: no cover
+        allow_credentials=allow_credentials,  # pragma: no cover
         allow_methods=["*"],  # pragma: no cover
         allow_headers=["*"],  # pragma: no cover
     )  # pragma: no cover
@@ -135,15 +137,28 @@ async def rate_limit(request: Request, call_next: Any) -> Any:
         "PATCH",
     ) and request.url.path.startswith("/api"):
         client_ip = request.client.host if request.client else "unknown"
-        now = time.time()
+        now = time.monotonic()
         window = 60.0
         limit = settings.rate_limit_per_minute
         with _rate_limit_lock:
-            bucket = _rate_limit_state.setdefault(client_ip, [])
-            bucket[:] = [t for t in bucket if now - t < window]
+            # Evict stale buckets once the table grows, so a flood of distinct
+            # client IPs cannot grow memory without bound.
+            if len(_rate_limit_state) > 1000:
+                cutoff = now - window
+                for ip in [
+                    ip
+                    for ip, ts in _rate_limit_state.items()
+                    if not ts or ts[-1] < cutoff
+                ]:
+                    del _rate_limit_state[ip]
+            bucket = [
+                t for t in _rate_limit_state.get(client_ip, []) if now - t < window
+            ]
             if len(bucket) >= limit:
+                _rate_limit_state[client_ip] = bucket
                 return _JR(status_code=429, content={"detail": "Rate limit exceeded"})
             bucket.append(now)
+            _rate_limit_state[client_ip] = bucket
     return await call_next(request)
 
 
@@ -196,11 +211,15 @@ async def request_id_middleware(request: Request, call_next: Any) -> Any:
     """
     rid = request.headers.get("X-Request-ID") or uuid.uuid4().hex
     token = _request_id_var.set(rid)
+    response = None
     try:
         response = await call_next(request)
     finally:
         _request_id_var.reset(token)
-    response.headers["X-Request-ID"] = rid
+        if response is not None:
+            response.headers["X-Request-ID"] = rid
+    if response is None:  # pragma: no cover
+        raise RuntimeError("request pipeline returned no response")
     return response
 
 

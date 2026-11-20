@@ -29,9 +29,6 @@ class OfferStatus(StrEnum):
     REMOVED = "removed"
 
 
-CAMPAIGN_RECORD_STATUSES = ("active", "pending_add", "pending_remove", "removed")
-
-
 class CampaignRecord(Base):
     """A campaign created through the creator."""
 

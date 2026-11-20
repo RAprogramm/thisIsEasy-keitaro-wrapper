@@ -13,6 +13,8 @@ CREATE TABLE campaigns (
 
 CREATE UNIQUE INDEX ix_campaigns_keitaro_id ON campaigns (keitaro_id);
 
+CREATE UNIQUE INDEX ix_campaigns_idempotency_key ON campaigns (idempotency_key);
+
 CREATE TABLE offer_changes (
     id SERIAL PRIMARY KEY,
     campaign_id INTEGER NOT NULL REFERENCES campaigns (id) ON DELETE CASCADE,
@@ -42,3 +44,4 @@ CREATE TABLE stream_offers (
 
 CREATE INDEX ix_stream_offers_keitaro_campaign_id ON stream_offers (keitaro_campaign_id);
 CREATE INDEX ix_stream_offers_stream_id ON stream_offers (stream_id);
+CREATE INDEX ix_stream_offers_campaign_stream ON stream_offers (keitaro_campaign_id, stream_id);

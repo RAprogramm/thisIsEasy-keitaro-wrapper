@@ -10,6 +10,7 @@ A FastAPI + SQLAlchemy wrapper around the Keitaro Admin API. Two tools in one se
 The frontend is a single HTML page served by the same app — no build step.
 
 [![CI](https://github.com/RAprogramm/thisIsEasy-keitaro-wrapper/actions/workflows/ci.yml/badge.svg)](https://github.com/RAprogramm/thisIsEasy-keitaro-wrapper/actions/workflows/ci.yml)
+[![wakatime](https://wakatime.com/badge/user/8c063d69-8cd5-4aa4-b336-6dc47bfb1062/project/15907c77-6811-4886-a153-b5e44e07bb87.svg)](https://wakatime.com/badge/user/8c063d69-8cd5-4aa4-b336-6dc47bfb1062/project/15907c77-6811-4886-a153-b5e44e07bb87)
 
 ## Requirements
 
@@ -61,7 +62,7 @@ same commands without the `uv run` prefix.
 | `KEITARO_API_KEY` | API key (never commit it) |
 | `KEITARO_TIMEOUT` | per-request timeout in seconds, default `30` |
 | `DATABASE_URL` | SQLAlchemy connection string, default `postgresql+psycopg:///keitaro` |
-| `CAMPAIGN_PREFIX` | campaign name prefix; the task asks for `test_surname_`, this repo ships `test_rozanov_` |
+| `CAMPAIGN_PREFIX` | campaign name prefix; empty by default (set e.g. `test_surname_`) |
 | `GOOGLE_URL` | where the "geo → Google" stream redirects to |
 | `DICTIONARIES_TTL` | lifetime of the cached dictionaries response, seconds, default `60` |
 | `RATE_LIMIT_PER_MINUTE` | mutating requests per client IP per minute, default `120` |
