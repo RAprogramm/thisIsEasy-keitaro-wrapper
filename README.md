@@ -7,7 +7,8 @@ A FastAPI + SQLAlchemy wrapper around the Keitaro Admin API. Two tools in one se
   additions and removals, pin shares, then publish or discard — Keitaro is only touched
   on publish.
 
-The frontend is a single HTML page served by the same app — no build step.
+The frontend is a single HTML page with vanilla ES modules served by the same app —
+no build step, no framework.
 
 [![CI](https://github.com/RAprogramm/thisIsEasy-keitaro-wrapper/actions/workflows/ci.yml/badge.svg)](https://github.com/RAprogramm/thisIsEasy-keitaro-wrapper/actions/workflows/ci.yml)
 [![lint](https://img.shields.io/github/actions/workflow/status/RAprogramm/thisIsEasy-keitaro-wrapper/ci.yml?job=lint&label=lint)](https://github.com/RAprogramm/thisIsEasy-keitaro-wrapper/actions/workflows/ci.yml?query=job%3Alint)
@@ -61,7 +62,7 @@ same commands without the `uv run` prefix.
 | `KEITARO_API_KEY` | API key (never commit it) |
 | `KEITARO_TIMEOUT` | per-request timeout in seconds, default `30` |
 | `DATABASE_URL` | SQLAlchemy connection string, default `postgresql+psycopg:///keitaro` |
-| `GOOGLE_URL` | where the "geo → Google" stream redirects to |
+| `GOOGLE_URL` | where the "geo → Google" stream redirects to, default `https://www.google.com` |
 | `DICTIONARIES_TTL` | lifetime of the cached dictionaries response, seconds, default `60` |
 | `RATE_LIMIT_PER_MINUTE` | mutating requests per client IP per minute, default `120` |
 | `LOG_LEVEL` | `DEBUG`, `INFO`, `WARNING` or `ERROR`, default `INFO` |
@@ -146,8 +147,10 @@ and statistics live in Keitaro and are never duplicated.
 <details>
 <summary><strong>Limitations</strong></summary>
 
-- **No authentication.** Anyone who can reach the port can create and modify campaigns
-  in Keitaro; run it on a trusted network or behind a reverse proxy that adds auth.
+- **No authentication — by design.** The task is the Keitaro wrapper; a real access model
+  (RBAC: who may create, edit, publish) is a separate substantial piece of work,
+  deliberately out of scope. Anyone who can reach the port can create and modify campaigns
+  in Keitaro, so run it on a trusted network or behind a reverse proxy that adds auth.
 - The editor targets the first `landings` stream of a campaign unless `stream_id` is
   given; campaigns with several offer streams need the explicit ID.
 - Statistics without `from`/`to` describe the whole history of a campaign.
@@ -192,7 +195,7 @@ docker compose up -d --build   # postgres:17 + the app; migrations apply on star
 Compose substitutes `KEITARO_API_KEY` (and optionally `KEITARO_URL`) from `.env` in the
 project root, so create it first, as in the quick start.
 
-The image is `python:3.14-slim` based, installs dependencies from `uv.lock`, runs as a
+The image is `python:3.15-slim` based, installs dependencies from `uv.lock`, runs as a
 non-root user and reports health through `/healthz`.
 
 </details>
