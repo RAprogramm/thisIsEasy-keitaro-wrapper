@@ -53,7 +53,7 @@ Without uv: `pip install -r requirements.txt` (pinned runtime dependencies) and 
 same commands without the `uv run` prefix.
 
 <details>
-<summary><h2>Settings (`.env`)</h2></summary>
+<summary><strong>Settings (`.env`)</strong></summary>
 
 | Variable | Purpose |
 |---|---|
@@ -73,7 +73,7 @@ same commands without the `uv run` prefix.
 </details>
 
 <details>
-<summary><h2>API</h2></summary>
+<summary><strong>API</strong></summary>
 
 | Method | Path | Description |
 |---|---|---|
@@ -95,7 +95,7 @@ same commands without the `uv run` prefix.
 </details>
 
 <details>
-<summary><h2>How it works</h2></summary>
+<summary><strong>How it works</strong></summary>
 
 The creator sends three objects to Keitaro: a campaign (`type: position`, with domain,
 group and traffic source), then two streams. Keitaro evaluates streams by position, so
@@ -120,7 +120,7 @@ and statistics live in Keitaro and are never duplicated.
 </details>
 
 <details>
-<summary><h2>Design decisions</h2></summary>
+<summary><strong>Design decisions</strong></summary>
 
 - **Keitaro is the source of truth.** The wrapper reads and mutates the tracker state
   directly; the local tables are a journal, not a cache, so they cannot go stale.
@@ -144,7 +144,7 @@ and statistics live in Keitaro and are never duplicated.
 </details>
 
 <details>
-<summary><h2>Limitations</h2></summary>
+<summary><strong>Limitations</strong></summary>
 
 - **No authentication.** Anyone who can reach the port can create and modify campaigns
   in Keitaro; run it on a trusted network or behind a reverse proxy that adds auth.
@@ -158,7 +158,7 @@ and statistics live in Keitaro and are never duplicated.
 </details>
 
 <details>
-<summary><h2>Scaling & state</h2></summary>
+<summary><strong>Scaling & state</strong></summary>
 
 The service runs as a single process and keeps two pieces of state in memory:
 
@@ -183,7 +183,7 @@ stops being acceptable, the migration path is deliberately boring:
 </details>
 
 <details>
-<summary><h2>Deployment</h2></summary>
+<summary><strong>Deployment</strong></summary>
 
 ```bash
 docker compose up -d --build   # postgres:17 + the app; migrations apply on start
@@ -198,7 +198,7 @@ non-root user and reports health through `/healthz`.
 </details>
 
 <details>
-<summary><h2>Development</h2></summary>
+<summary><strong>Development</strong></summary>
 
 ```bash
 make setup           # dependencies + local databases + migrations
