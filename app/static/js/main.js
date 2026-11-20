@@ -1,4 +1,5 @@
 import { $, show, toast, setStatus, fill, confirmAction, setBusy } from './ui.js';
+import { initActivity, logEvent } from './activity.js';
 import { api } from './api.js';
 import { state } from './state.js';
 import { esc, fmtNumber, plural } from './format.js';
@@ -23,10 +24,12 @@ function selectedCampaignId() {
 }
 
 async function init() {
+  initActivity();
   try {
     state.dict = await api('/api/dictionaries');
   } catch (error) {
     show($('c-msg'), error.message, false);
+    logEvent('err', `Не удалось загрузить справочники: ${error.message}`);
     return;
   }
   fill($('c-offer'), state.dict.offers, false);
@@ -49,7 +52,7 @@ async function loadRecent() {
     }
     for (const row of rows) select.append(new Option(`${row.name} (#${row.id})`, row.id));
   } catch (error) {
-    return;
+    logEvent('warn', `Не удалось загрузить недавние кампании: ${error.message}`);
   }
 }
 
@@ -410,6 +413,7 @@ function wireStreamActions() {
         input.value = `${item.name} (#${item.id})`;
         input.dataset.selectedId = item.id;
       },
+      'Ищу офферы…',
     );
   });
 }
@@ -478,20 +482,64 @@ function renderComboOptions(ui, items) {
     };
     ui.list.append(item);
   }
-  ui.list.hidden = false;
-  ui.input.setAttribute('aria-expanded', 'true');
+  ui.list.hidden = document.activeElement !== ui.input;
+  ui.input.setAttribute('aria-expanded', String(!ui.list.hidden));
   ui.active = -1;
+  positionCombo(ui);
+}
+
+function positionCombo(ui) {
+  if (ui.list.hidden) return;
+  ui.list.classList.remove('combo-list--up');
+  const listRect = ui.list.getBoundingClientRect();
+  const inputRect = ui.input.getBoundingClientRect();
+  const barSpace = 56;
+  if (
+    listRect.bottom > window.innerHeight - barSpace &&
+    inputRect.top > listRect.height + barSpace
+  ) {
+    ui.list.classList.add('combo-list--up');
+  }
+}
+
+function renderComboState(ui, message, kind = 'loading') {
+  ui.items = [];
+  ui.active = -1;
+  ui.list.innerHTML = '';
+  const item = document.createElement('li');
+  item.className = `combo-state combo-state--${kind}`;
+  item.setAttribute('role', 'option');
+  item.setAttribute('aria-disabled', 'true');
+  if (kind === 'loading') {
+    const spinner = document.createElement('span');
+    spinner.className = 'spinner spinner--xs';
+    spinner.setAttribute('aria-hidden', 'true');
+    item.append(spinner);
+  }
+  item.append(document.createTextNode(message));
+  ui.list.append(item);
+  ui.list.hidden = document.activeElement !== ui.input;
+  ui.input.setAttribute('aria-expanded', String(!ui.list.hidden));
+  positionCombo(ui);
 }
 
 async function refreshCombo(ui) {
-  const query = ui.query;
+  const requestId = ++ui.requestId;
+  if (document.activeElement === ui.input) renderComboState(ui, ui.loadingLabel);
+  ui.input.setAttribute('aria-busy', 'true');
   let rows;
   try {
-    rows = await ui.fetchItems(query);
+    rows = await ui.fetchItems(ui.query);
   } catch (error) {
+    if (ui.requestId === requestId) {
+      renderComboState(ui, `Не удалось загрузить: ${error.message}`, 'error');
+      logEvent('err', `Не удалось загрузить список: ${error.message}`);
+    }
     return;
+  } finally {
+    if (ui.requestId === requestId) ui.input.removeAttribute('aria-busy');
   }
-  if (ui.query !== query) return;
+  if (ui.requestId !== requestId) return;
   renderComboOptions(ui, rows);
 }
 
@@ -512,7 +560,7 @@ function moveComboActive(ui, delta) {
   options[ui.active].scrollIntoView({ block: 'nearest' });
 }
 
-function makeCombo(input, fetchItems, onSelect) {
+function makeCombo(input, fetchItems, onSelect, loadingLabel = 'Ищу…') {
   const ui = {
     input,
     list: $(input.getAttribute('aria-controls')),
@@ -520,6 +568,8 @@ function makeCombo(input, fetchItems, onSelect) {
     items: [],
     active: -1,
     timer: 0,
+    requestId: 0,
+    loadingLabel,
     fetchItems,
     onSelect,
   };
@@ -529,6 +579,7 @@ function makeCombo(input, fetchItems, onSelect) {
   };
   input.oninput = () => {
     ui.query = input.value;
+    ui.requestId += 1;
     input.dataset.selectedId = '';
     clearTimeout(ui.timer);
     ui.timer = setTimeout(() => refreshCombo(ui), COMBO_DEBOUNCE_MS);
@@ -659,6 +710,7 @@ makeCombo(
     $('e-id').dataset.selectedId = String(item.id);
     loadCampaign(String(item.id));
   },
+  'Ищу кампании…',
 );
 
 init();

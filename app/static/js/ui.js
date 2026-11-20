@@ -1,3 +1,5 @@
+import { logEvent, setSummary } from './activity.js';
+
 export const $ = (id) => document.getElementById(id);
 
 export function show(el, text, ok) {
@@ -5,21 +7,12 @@ export function show(el, text, ok) {
   el.firstChild.textContent = text;
 }
 
-let statusTimer = 0;
-
 export function setStatus(text, kind) {
-  const bar = $('e-status');
-  clearTimeout(statusTimer);
-  bar.classList.remove('is-idle', 'warn', 'err');
-  if (kind === 'warn' || kind === 'err') bar.classList.add(kind);
-  $('e-status-text').textContent = text;
-  $('e-status-time').textContent = new Date().toLocaleTimeString('ru-RU', {
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-  if (kind === 'ok' || kind === 'warn') {
-    statusTimer = setTimeout(() => bar.classList.add('is-idle'), 5000);
+  if (kind === 'ok' || kind === 'warn' || kind === 'err') {
+    logEvent(kind, text);
+    return;
   }
+  setSummary(text);
 }
 
 export function setBusy(btn, busy) {

@@ -28,6 +28,8 @@
   <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 13 4 4L19 7"/></symbol>
   <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
   <symbol id="i-offers" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h10M7 13h6"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-terminal" viewBox="0 0 24 24"><path d="m4 6 6 6-6 6"/><path d="M12 18h8"/></symbol>
 </svg>
 
 <div class="toast-stack" id="toast-stack" aria-live="polite" aria-atomic="false"></div>
@@ -154,11 +156,39 @@
 </section>
 </main>
 
-<div id="e-status" class="statusbar is-idle" role="status" aria-live="polite">
-  <span class="statusbar__dot" aria-hidden="true"></span>
-  <span id="e-status-text" class="statusbar__text"></span>
-  <span id="e-status-time" class="statusbar__time"></span>
-</div>
+<aside id="activity" class="activity" aria-label="Строка состояния">
+  <div class="activity__bar">
+    <div class="activity__bar-inner">
+      <div class="activity__status">
+        <span id="activity-dot" class="activity__dot" aria-hidden="true"></span>
+        <span id="activity-spinner" class="spinner spinner--sm" aria-hidden="true" hidden></span>
+        <span id="activity-text" class="activity__text" role="status" aria-live="polite">Готово к работе</span>
+        <span id="activity-time" class="activity__time"></span>
+      </div>
+      <button id="activity-toggle" class="activity__toggle" type="button" aria-expanded="false" aria-controls="activity-panel">
+        <svg class="icon" aria-hidden="true"><use href="#i-terminal"/></svg>
+        <span class="activity__toggle-label">Журнал</span>
+        <span id="activity-badge" class="activity__badge" hidden></span>
+        <svg class="icon activity__chevron" aria-hidden="true"><use href="#i-chevron"/></svg>
+      </button>
+    </div>
+  </div>
+  <div id="activity-panel" class="activity__panel" role="region" aria-label="Журнал операций" hidden>
+    <div class="activity__panel-inner">
+      <section class="activity__running" aria-labelledby="activity-running-title">
+        <h2 id="activity-running-title" class="activity__panel-title">Сейчас выполняется</h2>
+        <ul id="activity-running" class="activity__running-list"></ul>
+      </section>
+      <section class="activity__journal" aria-labelledby="activity-journal-title">
+        <div class="activity__panel-head">
+          <h2 id="activity-journal-title" class="activity__panel-title">Журнал</h2>
+          <button id="activity-clear" class="btn btn--ghost btn--sm" type="button">Очистить</button>
+        </div>
+        <ol id="activity-events" class="activity__events" role="log" aria-live="polite" aria-relevant="additions" tabindex="0"></ol>
+      </section>
+    </div>
+  </div>
+</aside>
 
 <dialog id="confirm-dialog" class="dialog" aria-labelledby="confirm-title" aria-describedby="confirm-text">
   <form method="dialog" class="dialog__body">
