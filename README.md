@@ -10,6 +10,7 @@ A FastAPI + SQLAlchemy wrapper around the Keitaro Admin API. Two tools in one se
 The frontend is a single HTML page served by the same app — no build step.
 
 [![CI](https://github.com/RAprogramm/thisIsEasy-keitaro-wrapper/actions/workflows/ci.yml/badge.svg)](https://github.com/RAprogramm/thisIsEasy-keitaro-wrapper/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/RAprogramm/thisIsEasy-keitaro-wrapper/graph/badge.svg)](https://codecov.io/gh/RAprogramm/thisIsEasy-keitaro-wrapper)
 [![wakatime](https://wakatime.com/badge/github/RAprogramm/thisIsEasy-keitaro-wrapper.svg)](https://wakatime.com/badge/github/RAprogramm/thisIsEasy-keitaro-wrapper)
 
 ## Requirements

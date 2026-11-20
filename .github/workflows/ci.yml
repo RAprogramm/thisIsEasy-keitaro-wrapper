@@ -103,7 +103,12 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Test
-        run: uv run --locked pytest --cov=app --cov-report=term-missing --cov-fail-under=100
+        run: uv run --locked pytest --cov=app --cov-report=term-missing --cov-report=xml --cov-fail-under=100
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5  # v7.1.1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: true
 
   docker:
     runs-on: ubuntu-latest
