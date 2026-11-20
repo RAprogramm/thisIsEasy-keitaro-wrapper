@@ -31,6 +31,7 @@ _request_id_var: contextvars.ContextVar[str] = contextvars.ContextVar(
 )
 _rate_limit_state: dict[str, list[float]] = {}
 _rate_limit_lock = threading.Lock()
+_PROBE_PATHS = frozenset({"/health", "/healthz", "/readyz"})
 
 
 class _RequestIdFilter(logging.Filter):
@@ -77,7 +78,12 @@ _configure_logging()
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    """Close the shared HTTP client so connections are released on shutdown."""
+    """Close the shared HTTP client so connections are released on shutdown.
+
+    Also demotes uvicorn's access log: this service logs every request itself,
+    with a request id and duration, so a second copy of each line is noise.
+    """
+    logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
     logger.info("application startup")
     try:
         async with engine.connect() as conn:
@@ -115,53 +121,6 @@ app.add_middleware(GZipMiddleware, minimum_size=500)
 
 
 @app.middleware("http")
-async def request_id_middleware(request: Request, call_next: Any) -> Any:
-    """Assign/propagate a request id and store it in a context var."""
-    rid = request.headers.get("X-Request-ID") or uuid.uuid4().hex
-    token = _request_id_var.set(rid)
-    try:
-        response = await call_next(request)
-    finally:
-        _request_id_var.reset(token)
-    response.headers["X-Request-ID"] = rid
-    return response
-
-
-@app.middleware("http")
-async def log_requests(request: Request, call_next: Any) -> Any:
-    """Log every request with method, path, status and duration."""
-    from starlette.responses import Response
-
-    start = time.perf_counter()
-    try:
-        response: Response = await call_next(request)
-    except Exception:  # pragma: no cover
-        logger.exception("request failed: %s %s", request.method, request.url.path)
-        raise
-    duration_ms = (time.perf_counter() - start) * 1000
-    logger.info(
-        "%s %s -> %d (%.1f ms)",
-        request.method,
-        request.url.path,
-        response.status_code,
-        duration_ms,
-    )
-    return response
-
-
-@app.middleware("http")
-async def security_headers(request: Request, call_next: Any) -> Any:
-    """Add a minimal set of security headers to every response."""
-    from starlette.responses import Response
-
-    response: Response = await call_next(request)
-    response.headers.setdefault("X-Content-Type-Options", "nosniff")
-    response.headers.setdefault("X-Frame-Options", "DENY")
-    response.headers.setdefault("Referrer-Policy", "no-referrer")
-    return response
-
-
-@app.middleware("http")
 async def rate_limit(request: Request, call_next: Any) -> Any:
     """Simple per-IP sliding-window limiter for mutating endpoints.
 
@@ -186,6 +145,63 @@ async def rate_limit(request: Request, call_next: Any) -> Any:
                 return _JR(status_code=429, content={"detail": "Rate limit exceeded"})
             bucket.append(now)
     return await call_next(request)
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next: Any) -> Any:
+    """Add a minimal set of security headers to every response."""
+    from starlette.responses import Response
+
+    response: Response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    return response
+
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next: Any) -> Any:
+    """Log every request with method, path, status and duration.
+
+    Liveness and readiness probes are logged at DEBUG so that periodic
+    monitoring traffic does not drown the INFO stream.
+    """
+    from starlette.responses import Response
+
+    start = time.perf_counter()
+    try:
+        response: Response = await call_next(request)
+    except Exception:  # pragma: no cover
+        logger.exception("request failed: %s %s", request.method, request.url.path)
+        raise
+    duration_ms = (time.perf_counter() - start) * 1000
+    level = logging.DEBUG if request.url.path in _PROBE_PATHS else logging.INFO
+    logger.log(
+        level,
+        "%s %s -> %d (%.1f ms)",
+        request.method,
+        request.url.path,
+        response.status_code,
+        duration_ms,
+    )
+    return response
+
+
+@app.middleware("http")
+async def request_id_middleware(request: Request, call_next: Any) -> Any:
+    """Assign/propagate a request id and store it in a context var.
+
+    Registered last so it is the outermost middleware: every log line this
+    process emits for the request, including the access log, carries the id.
+    """
+    rid = request.headers.get("X-Request-ID") or uuid.uuid4().hex
+    token = _request_id_var.set(rid)
+    try:
+        response = await call_next(request)
+    finally:
+        _request_id_var.reset(token)
+    response.headers["X-Request-ID"] = rid
+    return response
 
 
 @app.exception_handler(IntegrityError)

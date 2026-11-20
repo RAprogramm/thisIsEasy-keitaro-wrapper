@@ -6,6 +6,7 @@ import logging
 import pytest
 from fastapi import Request
 from fastapi.responses import JSONResponse
+from fastapi.testclient import TestClient
 
 from app.main import (
     _configure_logging,
@@ -57,6 +58,30 @@ def test_configure_logging_respects_existing_handlers() -> None:
     root = logging.getLogger()
     assert root.handlers
     _configure_logging()
+
+
+def test_probe_requests_log_at_debug(
+    client: TestClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    with caplog.at_level(logging.DEBUG, logger="app.main"):
+        client.get("/healthz")
+    probes = [r for r in caplog.records if "GET /healthz ->" in r.getMessage()]
+    assert probes, "probe request must be logged"
+    assert all(r.levelno == logging.DEBUG for r in probes)
+
+
+def test_api_requests_log_at_info(
+    client: TestClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    with caplog.at_level(logging.INFO, logger="app.main"):
+        client.get("/api/campaigns")
+    lines = [r for r in caplog.records if "GET /api/campaigns ->" in r.getMessage()]
+    assert lines, "api request must be logged"
+    assert all(r.levelno == logging.INFO for r in lines)
+
+
+def test_lifespan_demotes_uvicorn_access_log(client: TestClient) -> None:
+    assert logging.getLogger("uvicorn.access").level == logging.WARNING
 
 
 @pytest.mark.anyio

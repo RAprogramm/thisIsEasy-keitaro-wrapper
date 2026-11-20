@@ -67,6 +67,7 @@ def test_rate_limit_returns_429(
     assert r1.status_code in (201, 400)
     r2 = client.post("/api/campaigns", json={"name": "c", "geo": "US", "offer_id": 100})
     assert r2.status_code == 429
+    assert r2.headers.get("X-Request-ID"), "429 must still carry the request id"
 
 
 def test_readyz_returns_ok(client: TestClient) -> None:
