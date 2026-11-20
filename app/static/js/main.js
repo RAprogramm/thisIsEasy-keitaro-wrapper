@@ -1,13 +1,11 @@
 import { $, esc, show, toast, setStatus, fill } from './ui.js';
 import { api, errorMessage } from './api.js';
-
-let dict = { offers: [] };
-let currentCampaign = null;
+import { state } from './state.js';
 
 
 
 function syncStatus() {
-  const c = currentCampaign;
+  const c = state.currentCampaign;
   const withOffers = c.streams.filter(s => s.schema === 'landings').length;
   const dirty = c.streams.filter(s => s.dirty).length;
   if (dirty) {
@@ -19,11 +17,11 @@ function syncStatus() {
 
 
 async function init() {
-  try { dict = await api('/api/dictionaries'); } catch (e) { show($('c-msg'), e.message, false); return; }
-  fill($('c-offer'), dict.offers, false);
-  fill($('c-domain'), dict.domains, true);
-  fill($('c-group'), dict.groups, true);
-  fill($('c-source'), dict.sources, true);
+  try { state.dict = await api('/api/dictionaries'); } catch (e) { show($('c-msg'), e.message, false); return; }
+  fill($('c-offer'), state.dict.offers, false);
+  fill($('c-domain'), state.dict.domains, true);
+  fill($('c-group'), state.dict.groups, true);
+  fill($('c-source'), state.dict.sources, true);
   loadRecent();
 }
 
@@ -52,7 +50,7 @@ async function loadCampaign(id) {
     if (from) params.set('from', from);
     if (to) params.set('to', to);
     const qs = params.toString() ? '?' + params.toString() : '';
-    currentCampaign = await api('/api/campaigns/' + id + qs);
+    state.currentCampaign = await api('/api/campaigns/' + id + qs);
     $('e-msg').innerHTML = '';
     $('e-open').disabled = false;
     render();
@@ -67,7 +65,7 @@ async function loadCampaign(id) {
 const fmt = (n) => (Number(n) || 0).toLocaleString('ru-RU', { maximumFractionDigits: 2 });
 
 function render() {
-  const c = currentCampaign;
+  const c = state.currentCampaign;
   let html = `<h2>${esc(c.name)} <span class="muted">#${c.id}</span></h2>`;
   if (c.stats_error) html += `<div class="msg err">Статистика не загрузилась, цифры ниже недостоверны: ${esc(c.stats_error)}</div>`;
   for (const s of c.streams) {
@@ -140,7 +138,7 @@ function render() {
 async function runAction(btn, action, okText, kind, onError) {
   if (btn) btn.disabled = true;
   try {
-    currentCampaign = await action();
+    state.currentCampaign = await action();
     $('e-msg').innerHTML = '';
     render();
     setStatus(okText, kind);
@@ -157,7 +155,7 @@ async function runAction(btn, action, okText, kind, onError) {
 function changeOffer(method, btn, offerId, streamId) {
   if (!offerId) return;
   if (method === 'DELETE' && !confirm('Убрать оффер из потока? Он останется в архиве обёртки, пока вы не отмените изменение.')) return;
-  const id = currentCampaign.id;
+  const id = state.currentCampaign.id;
   const call = method === 'POST'
     ? () => api(`/api/campaigns/${id}/offers`, { method, body: JSON.stringify({ offer_id: Number(offerId), stream_id: Number(streamId) }) })
     : () => api(`/api/campaigns/${id}/offers/${offerId}?stream_id=${streamId}`, { method });
@@ -168,7 +166,7 @@ function changeOffer(method, btn, offerId, streamId) {
 }
 
 function restoreOffer(btn, offerId, streamId) {
-  const id = currentCampaign.id;
+  const id = state.currentCampaign.id;
   return runAction(
     btn,
     () => api(`/api/campaigns/${id}/offers/${offerId}/restore?stream_id=${streamId}`, { method: 'POST' }),
@@ -178,7 +176,7 @@ function restoreOffer(btn, offerId, streamId) {
 }
 
 function pushStream(btn, streamId) {
-  const id = currentCampaign.id;
+  const id = state.currentCampaign.id;
   setStatus('Отправляю изменения в Keitaro…');
   return runAction(
     btn,
@@ -190,7 +188,7 @@ function pushStream(btn, streamId) {
 
 function cancelStream(btn, streamId) {
   if (!confirm('Отменить все не отправленные изменения в этом потоке?')) return;
-  const id = currentCampaign.id;
+  const id = state.currentCampaign.id;
   return runAction(
     btn,
     () => api(`/api/campaigns/${id}/cancel?stream_id=${streamId}`, { method: 'POST' }),
@@ -200,7 +198,7 @@ function cancelStream(btn, streamId) {
 }
 
 function pinOffer(cb, offerId, streamId, pinned) {
-  const id = currentCampaign.id;
+  const id = state.currentCampaign.id;
   return runAction(
     null,
     () => api(`/api/campaigns/${id}/offers/${offerId}/pin?stream_id=${streamId}&pinned=${pinned}`, { method: 'POST' }),
@@ -216,7 +214,7 @@ const COMBO_DEBOUNCE_MS = 150;
 const COMBO_LIMIT = 20;
 
 function comboStream(streamId) {
-  return currentCampaign.streams.find(s => String(s.id) === String(streamId));
+  return state.currentCampaign.streams.find(s => String(s.id) === String(streamId));
 }
 
 function appendHighlighted(li, name, needle) {
@@ -340,7 +338,7 @@ function addFromCombo(streamId) {
 
 function renderOffers(filter) {
   const needle = filter.trim().toLowerCase();
-  const items = dict.offers.filter(o => !needle || o.name.toLowerCase().includes(needle) || String(o.id) === needle);
+  const items = state.dict.offers.filter(o => !needle || o.name.toLowerCase().includes(needle) || String(o.id) === needle);
   $('offers-list').innerHTML = items.length
     ? items.map(o => `<div class="chip">${esc(o.name)} <span class="muted">#${o.id}</span></div>`).join('')
     : '<span class="muted">Ничего не найдено</span>';
@@ -391,7 +389,7 @@ makeCombo(
   },
 );
 $('e-open').onclick = () => {
-  if (currentCampaign) window.open(`${currentCampaign.keitaro_url}/admin/#!/campaigns/`, '_blank');
+  if (state.currentCampaign) window.open(`${state.currentCampaign.keitaro_url}/admin/#!/campaigns/`, '_blank');
 };
 $('e-offers').onclick = () => {
   const panel = $('offers-panel');
