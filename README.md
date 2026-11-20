@@ -3,7 +3,9 @@
 A FastAPI + SQLAlchemy wrapper around the Keitaro Admin API. Two tools in one service:
 
 - **Campaign creator**: name + geo code + offer ID → a campaign with two streams (`geo → Google`, `everyone else → offer`), with domain, group and source resolved through the Keitaro API.
-- **Campaign editor**: load any campaign by ID, see per-offer statistics, add and remove offers; stream shares are rebalanced automatically.
+- **Campaign editor**: load any campaign by ID, see per-offer statistics, stage offer
+  additions and removals, pin shares, then publish or discard — Keitaro is only touched
+  on publish.
 
 The frontend is a single HTML page served by the same app — no build step.
 
@@ -18,9 +20,9 @@ The frontend is a single HTML page served by the same app — no build step.
 ## Quick start
 
 ```bash
-createdb keitaro
 git clone https://github.com/RAprogramm/thisIsEasy-keitaro-wrapper.git
 cd thisIsEasy-keitaro-wrapper
+createdb keitaro
 uv sync
 
 cp .env.example .env        # set KEITARO_API_KEY (the key from the Keitaro admin panel)
@@ -35,6 +37,9 @@ Shortcut: `make run` (runs `python -m app`) after `make migrate`.
 Without uv: `pip install -r requirements.txt` (pinned runtime dependencies) and run the
 same commands without the `uv run` prefix.
 
+Prefer containers? `docker compose up -d --build` starts Postgres and the app together —
+see [Deployment](#deployment).
+
 ## Settings (`.env`)
 
 | Variable | Purpose |
@@ -45,12 +50,20 @@ same commands without the `uv run` prefix.
 | `DATABASE_URL` | SQLAlchemy connection string, default `postgresql+psycopg:///keitaro` |
 | `CAMPAIGN_PREFIX` | campaign name prefix, `test_surname_` |
 | `GOOGLE_URL` | where the "geo → Google" stream redirects to |
+| `DICTIONARIES_TTL` | lifetime of the cached dictionaries response, seconds, default `60` |
+| `RATE_LIMIT_PER_MINUTE` | mutating requests per client IP per minute, default `120` |
+| `LOG_LEVEL` | `DEBUG`, `INFO`, `WARNING` or `ERROR`, default `INFO` |
+| `LOG_FORMAT` | `text` or `json`, default `text` |
+| `CORS_ORIGINS` | comma-separated allowed origins; empty disables CORS |
+| `DB_POOL_SIZE` / `DB_MAX_OVERFLOW` | SQLAlchemy pool size and overflow, defaults `5` / `10` |
+| `DB_POOL_TIMEOUT` / `DB_POOL_RECYCLE` | pool checkout timeout and connection recycle, seconds, defaults `30` / `1800` |
 
 ## API
 
 | Method | Path | Description |
 |---|---|---|
 | GET | `/api/dictionaries` | domains, groups, sources, offers |
+| GET | `/api/offers/search` | `?q=&limit=` — offers by name or exact ID, the autocomplete source |
 | POST | `/api/campaigns` | `{name, geo, offer_id, domain_id?, group_id?, source_id?}` — create a campaign |
 | GET | `/api/campaigns` | campaigns created through the creator |
 | GET | `/api/campaigns/{id}` | campaign, its streams, offers and statistics |
@@ -140,6 +153,9 @@ stops being acceptable, the migration path is deliberately boring:
 ```bash
 docker compose up -d --build   # postgres:17 + the app; migrations apply on start
 ```
+
+Compose substitutes `KEITARO_API_KEY` (and optionally `KEITARO_URL`) from `.env` in the
+project root, so create it first, as in the quick start.
 
 The image is `python:3.14-slim` based, installs dependencies from `uv.lock`, runs as a
 non-root user and reports health through `/healthz`.
