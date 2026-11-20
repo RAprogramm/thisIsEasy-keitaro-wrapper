@@ -82,6 +82,28 @@ async def test_get_offer_propagates_server_errors(
 
 
 @pytest.mark.anyio
+async def test_html_error_body_collapses_to_status(
+    httpx2_mock: respx.Router, kc: KeitaroClient
+) -> None:
+    httpx2_mock.get(f"{BASE}/campaigns/9").respond(
+        404, text="<html><body><center>nginx</center></body></html>"
+    )
+    with pytest.raises(HTTPException) as exc:
+        await kc.get_campaign(9)
+    assert exc.value.detail == "Keitaro: HTTP 404"
+
+
+@pytest.mark.anyio
+async def test_empty_error_body_collapses_to_status(
+    httpx2_mock: respx.Router, kc: KeitaroClient
+) -> None:
+    httpx2_mock.get(f"{BASE}/campaigns/8").respond(403, text="")
+    with pytest.raises(HTTPException) as exc:
+        await kc.get_campaign(8)
+    assert exc.value.detail == "Keitaro: HTTP 403"
+
+
+@pytest.mark.anyio
 async def test_empty_response_returns_none(
     httpx2_mock: respx.Router, kc: KeitaroClient
 ) -> None:

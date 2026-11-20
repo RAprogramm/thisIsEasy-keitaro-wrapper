@@ -100,6 +100,19 @@ class KeitaroClient:
 
     RETRYABLE_STATUSES: ClassVar[frozenset[int]] = frozenset({429, 502, 503, 504})
 
+    @staticmethod
+    def _error_detail(r: httpx2.Response) -> str:
+        """Summarize an upstream failure for the client.
+
+        Keitaro itself answers with JSON errors, which are passed through.
+        Proxies in front of it answer with HTML pages, which would flood the
+        UI, so they collapse to the status line.
+        """
+        body = r.text.strip()
+        if not body or body.startswith("<"):
+            return f"Keitaro: HTTP {r.status_code}"
+        return f"Keitaro: {body[:500]}"
+
     async def _request(self, method: str, path: str, **kwargs: Any) -> Any:
         last_error: Exception | None = None
         for attempt in range(1, self.MAX_ATTEMPTS + 1):
@@ -113,7 +126,7 @@ class KeitaroClient:
                 await self._sleep_backoff(attempt, None)
                 continue
             if r.status_code in self.RETRYABLE_STATUSES:
-                last_error = HTTPException(r.status_code, f"Keitaro: {r.text[:500]}")
+                last_error = HTTPException(r.status_code, self._error_detail(r))
                 if attempt == self.MAX_ATTEMPTS:
                     logger.warning(
                         "Keitaro rejected %s %s with %d: %s",
@@ -122,7 +135,7 @@ class KeitaroClient:
                         r.status_code,
                         r.text[:200],
                     )
-                    raise HTTPException(r.status_code, f"Keitaro: {r.text[:500]}")
+                    raise HTTPException(r.status_code, self._error_detail(r))
                 retry_after = r.headers.get("Retry-After")
                 await self._sleep_backoff(attempt, retry_after)
                 continue
@@ -134,7 +147,7 @@ class KeitaroClient:
                     r.status_code,
                     r.text[:200],
                 )
-                raise HTTPException(r.status_code, f"Keitaro: {r.text[:500]}")
+                raise HTTPException(r.status_code, self._error_detail(r))
             return r.json() if r.content else None
         raise HTTPException(
             502, "Keitaro недоступен"
