@@ -53,6 +53,16 @@ def test_rebalance_respects_pinned() -> None:
     assert offers[1].share in (38, 37)
 
 
+def test_rebalance_pinned_overfill_never_goes_negative() -> None:
+    offers = [
+        make_stream_offer(1, pinned=True, share=80),
+        make_stream_offer(2, pinned=True, share=40),
+        make_stream_offer(3),
+    ]
+    rebalance(offers)
+    assert [o.share for o in offers] == [80, 40, 0]
+
+
 def test_rebalance_removed_gets_zero() -> None:
     offers = [
         make_stream_offer(1, status="active"),
@@ -410,3 +420,15 @@ def test_remove_pending_add_deletes_it(client: TestClient, fake: FakeKeitaro) ->
     body = client.delete("/api/campaigns/1000/offers/200").json()
     ids = [o["offer_id"] for o in body["streams"][1]["offers"]]
     assert 200 not in ids
+
+
+def test_remove_pending_add_returns_its_share_to_the_stream(
+    client: TestClient, fake: FakeKeitaro
+) -> None:
+    seed_campaign(fake)
+    added = client.post("/api/campaigns/1000/offers", json={"offer_id": 200}).json()
+    assert [o["share"] for o in added["streams"][1]["offers"]] == [50, 50]
+    body = client.delete("/api/campaigns/1000/offers/200").json()
+    offers = body["streams"][1]["offers"]
+    assert [(o["offer_id"], o["share"]) for o in offers] == [(100, 100)]
+    assert body["streams"][1]["dirty"] is False

@@ -90,3 +90,32 @@ async def test_async_cache_returns_cached_value_within_ttl() -> None:
     clock["now"] = 5.0
     assert await cache.aget_or_set(factory) == 42
     assert calls["n"] == 1
+
+
+@pytest.mark.anyio
+async def test_async_cache_returns_stale_on_factory_failure() -> None:
+    clock = {"now": 0.0}
+    cache: TtlCache[int] = TtlCache(ttl=10.0, clock=lambda: clock["now"])
+    calls = {"n": 0}
+
+    async def factory() -> int:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return 7
+        raise RuntimeError("boom")
+
+    assert await cache.aget_or_set(factory) == 7
+    clock["now"] = 10.0
+    assert await cache.aget_or_set(factory) == 7
+    assert calls["n"] == 2
+
+
+@pytest.mark.anyio
+async def test_async_cache_propagates_when_no_stale() -> None:
+    cache: TtlCache[int] = TtlCache(ttl=10.0, clock=lambda: 0.0)
+
+    async def factory() -> int:
+        raise ValueError("nope")
+
+    with pytest.raises(ValueError, match="nope"):
+        await cache.aget_or_set(factory)

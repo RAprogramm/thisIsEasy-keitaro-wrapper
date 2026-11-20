@@ -1,23 +1,34 @@
-import { $, esc, show, toast, setStatus, fill } from './ui.js';
-import { api, errorMessage } from './api.js';
+import { $, show, toast, setStatus, fill, confirmAction, setBusy } from './ui.js';
+import { api } from './api.js';
 import { state } from './state.js';
+import { esc, fmtNumber, plural } from './format.js';
 
-
+const COMBO_DEBOUNCE_MS = 150;
+const COMBO_LIMIT = 20;
 
 function syncStatus() {
-  const c = state.currentCampaign;
-  const withOffers = c.streams.filter(s => s.schema === 'landings').length;
-  const dirty = c.streams.filter(s => s.dirty).length;
+  const campaign = state.currentCampaign;
+  const total = campaign.streams.length;
+  const dirty = campaign.streams.filter((stream) => stream.dirty).length;
   if (dirty) {
-    setStatus(`Потоков: ${c.streams.length}, с офферами: ${withOffers}. Не отправлено в Keitaro: ${dirty} — нажмите «Отправить изменения в Keitarо»`, 'warn');
+    setStatus(`Не опубликовано ${dirty} из ${total} ${plural(total, ['потока', 'потоков', 'потоков'])}`, 'warn');
   } else {
-    setStatus(`Потоков: ${c.streams.length}, с офферами: ${withOffers}. Всё синхронизировано с Keitaro`, 'ok');
+    setStatus(`Все потоки синхронизированы · ${total} ${plural(total, ['поток', 'потока', 'потоков'])}`, 'ok');
   }
 }
 
+function selectedCampaignId() {
+  const input = $('e-id');
+  return input.dataset.selectedId || (/^\d+$/.test(input.value.trim()) ? input.value.trim() : '');
+}
 
 async function init() {
-  try { state.dict = await api('/api/dictionaries'); } catch (e) { show($('c-msg'), e.message, false); return; }
+  try {
+    state.dict = await api('/api/dictionaries');
+  } catch (error) {
+    show($('c-msg'), error.message, false);
+    return;
+  }
   fill($('c-offer'), state.dict.offers, false);
   fill($('c-domain'), state.dict.domains, true);
   fill($('c-group'), state.dict.groups, true);
@@ -28,202 +39,407 @@ async function init() {
 async function loadRecent() {
   try {
     const rows = await api('/api/campaigns');
-    const sel = $('e-recent');
-    sel.innerHTML = '<option value="">—</option>';
+    const select = $('e-recent');
+    select.innerHTML = '';
+    select.append(new Option('— выберите кампанию —', ''));
     if (!rows.length) {
-      const opt = new Option('Кампаний пока нет — создайте на вкладке «Создать»', '');
-      opt.disabled = true;
-      sel.append(opt);
+      const empty = new Option('Кампаний пока нет', '');
+      empty.disabled = true;
+      select.append(empty);
     }
-    for (const r of rows) sel.append(new Option(`${r.name} (#${r.id})`, r.id));
-  } catch (e) { /* ignore */ }
+    for (const row of rows) select.append(new Option(`${row.name} (#${row.id})`, row.id));
+  } catch (error) {
+    return;
+  }
+}
+
+function campaignSkeleton() {
+  const card = `<article class="card stream skeleton-card" aria-hidden="true">
+    <div class="skeleton-card__head">
+      <span class="skeleton skeleton--icon"></span>
+      <div class="skeleton-card__lines">
+        <span class="skeleton skeleton--line" style="width: 180px"></span>
+        <span class="skeleton skeleton--line" style="width: 120px"></span>
+      </div>
+    </div>
+    <div class="skeleton-card__body">
+      <span class="skeleton skeleton--row"></span>
+      <span class="skeleton skeleton--row"></span>
+      <span class="skeleton skeleton--row"></span>
+    </div>
+  </article>`;
+  return `<div class="skeleton-campaign">
+    <span class="skeleton skeleton--heading"></span>
+    ${card}${card}
+  </div>`;
 }
 
 async function loadCampaign(id) {
-  if (!id) return show($('e-msg'), 'Введите ID кампании', false);
-  const btn = $('e-load');
-  btn.disabled = true;
-  setStatus('Получаю потоки из Keitaro…');
+  if (!id) {
+    show($('e-msg'), 'Введите ID кампании', false);
+    return;
+  }
+  const button = $('e-load');
+  setBusy(button, true);
+  setStatus('Загружаю потоки из Keitaro…');
+  if (!state.currentCampaign) $('e-body').innerHTML = campaignSkeleton();
   try {
     const params = new URLSearchParams();
-    const from = $('e-from').value, to = $('e-to').value;
+    const from = $('e-from').value;
+    const to = $('e-to').value;
     if (from) params.set('from', from);
     if (to) params.set('to', to);
-    const qs = params.toString() ? '?' + params.toString() : '';
-    state.currentCampaign = await api('/api/campaigns/' + id + qs);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    state.currentCampaign = await api(`/api/campaigns/${id}${query}`);
     $('e-msg').innerHTML = '';
     $('e-open').disabled = false;
     render();
     syncStatus();
-  } catch (e) {
+  } catch (error) {
+    state.currentCampaign = null;
     $('e-body').innerHTML = '';
-    show($('e-msg'), e.message, false);
-    setStatus(`Не удалось получить потоки: ${e.message}`, 'err');
-  } finally { btn.disabled = false; }
+    $('e-open').disabled = true;
+    show($('e-msg'), error.message, false);
+    setStatus(error.message, 'err');
+    toast(error.message, false);
+  } finally {
+    setBusy(button, false);
+  }
 }
 
-const fmt = (n) => (Number(n) || 0).toLocaleString('ru-RU', { maximumFractionDigits: 2 });
+function offerBadge(offer) {
+  if (offer.status === 'pending_add') {
+    return '<span class="badge badge--warning"><span class="badge__dot"></span>Не опубликован</span>';
+  }
+  if (offer.status === 'pending_remove') {
+    return '<span class="badge badge--warning"><span class="badge__dot"></span>Будет удалён</span>';
+  }
+  if (offer.status === 'removed') {
+    return '<span class="badge badge--neutral"><span class="badge__dot"></span>В архиве</span>';
+  }
+  return '';
+}
+
+function offerRow(stream, offer) {
+  const stats = offer.stats || {};
+  const removed = offer.status === 'removed';
+  const staged = removed || offer.status === 'pending_remove';
+  const share = Math.max(0, Math.min(100, Number(offer.share) || 0));
+  const pinLabel = `${offer.pinned ? 'Открепить' : 'Закрепить'} долю оффера ${offer.name}`;
+  const action = removed
+    ? `<button class="btn btn--success btn--sm" data-restore="${offer.offer_id}" data-stream="${stream.id}">
+         <svg class="icon" aria-hidden="true"><use href="#i-undo"/></svg><span>Вернуть</span>
+       </button>`
+    : staged
+      ? ''
+      : `<button class="btn btn--danger btn--sm" data-del="${offer.offer_id}" data-stream="${stream.id}">
+           <svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg><span>Убрать</span>
+         </button>`;
+  return `<tr class="${removed ? 'is-removed' : ''}">
+    <td class="offer-cell" data-label="Оффер">
+      <div class="offer-cell__main">
+        <span class="offer-cell__name">${esc(offer.name)}</span>
+        ${offerBadge(offer)}
+      </div>
+      <span class="offer-cell__id mono">#${offer.offer_id}</span>
+    </td>
+    <td class="num" data-label="Доля">
+      <span class="share">
+        <span class="share__value">${share}%</span>
+        <span class="share__track"><span class="share__fill" style="width: ${share}%"></span></span>
+      </span>
+    </td>
+    <td class="center" data-label="Закрепление">
+      <label class="switch" title="Закреплённая доля не участвует в пересчёте">
+        <input type="checkbox" data-pin="${offer.offer_id}" data-stream="${stream.id}"
+          aria-label="${esc(pinLabel)}" ${offer.pinned ? 'checked' : ''} ${staged ? 'disabled' : ''}>
+        <span class="switch__track" aria-hidden="true"></span>
+      </label>
+    </td>
+    <td class="num" data-label="Клики">${fmtNumber(stats.clicks)}</td>
+    <td class="num" data-label="Уники">${fmtNumber(stats.unique_clicks)}</td>
+    <td class="num" data-label="Конверсии">${fmtNumber(stats.conversions)}</td>
+    <td class="num" data-label="Доход">${fmtNumber(stats.revenue)}</td>
+    <td class="num" data-label="Расход">${fmtNumber(stats.cost)}</td>
+    <td class="num" data-label="Профит">${fmtNumber(stats.profit)}</td>
+    <td class="actions" data-label="">${action}</td>
+  </tr>`;
+}
+
+function streamBadge(stream, hasOffers) {
+  if (stream.dirty) {
+    return '<span class="badge badge--warning"><span class="badge__dot"></span>Не опубликовано</span>';
+  }
+  if (!hasOffers) {
+    return '<span class="badge badge--neutral"><span class="badge__dot"></span>Без офферов</span>';
+  }
+  return '<span class="badge badge--success"><span class="badge__dot"></span>Синхронизировано</span>';
+}
+
+function addOfferForm(stream) {
+  return `<div class="stream__add">
+    <div class="field">
+      <label for="offer-input-${stream.id}">Добавить оффер</label>
+      <div class="combo">
+        <svg class="icon combo__icon" aria-hidden="true"><use href="#i-search"/></svg>
+        <input id="offer-input-${stream.id}" type="text" class="combo-input" data-combo="${stream.id}"
+          autocomplete="off" spellcheck="false" role="combobox" aria-expanded="false"
+          aria-autocomplete="list" aria-controls="combo-list-${stream.id}"
+          placeholder="Название или ID оффера">
+        <ul class="combo-list" id="combo-list-${stream.id}" role="listbox" hidden></ul>
+      </div>
+    </div>
+    <button class="btn btn--primary" data-add="${stream.id}" type="button">
+      <svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg><span>Добавить</span>
+    </button>
+  </div>`;
+}
+
+function renderStream(stream) {
+  const isOffers = stream.schema === 'landings';
+  const activeOffers = stream.offers.filter((offer) => offer.status !== 'removed');
+  const kind = isOffers
+    ? `Поток с офферами · ${activeOffers.length} ${plural(activeOffers.length, ['оффер', 'оффера', 'офферов'])}`
+    : 'Редирект-поток · содержимое остаётся в Keitaro';
+  let html = `<article class="card stream ${stream.dirty ? 'stream--dirty' : ''}">
+    <header class="stream__head">
+      <div class="stream__identity">
+        <span class="stream__icon" aria-hidden="true">
+          <svg class="icon"><use href="#${isOffers ? 'i-stream' : 'i-redirect'}"/></svg>
+        </span>
+        <div>
+          <h3 class="stream__name">${esc(stream.name || 'Поток')}</h3>
+          <p class="stream__kind">${kind}</p>
+        </div>
+      </div>
+      <div class="stream__badges">${streamBadge(stream, isOffers)}</div>
+    </header>`;
+  if (!isOffers) {
+    return `${html}</article>`;
+  }
+  if (stream.offers.length) {
+    html += `<div class="table-wrap">
+      <table class="table">
+        <thead><tr>
+          <th scope="col">Оффер</th>
+          <th scope="col" class="num">Доля</th>
+          <th scope="col" class="center">Закрепление</th>
+          <th scope="col" class="num">Клики</th>
+          <th scope="col" class="num">Уники</th>
+          <th scope="col" class="num">Конверсии</th>
+          <th scope="col" class="num">Доход</th>
+          <th scope="col" class="num">Расход</th>
+          <th scope="col" class="num">Профит</th>
+          <th scope="col"><span class="sr-only">Действия</span></th>
+        </tr></thead>
+        <tbody>${stream.offers.map((offer) => offerRow(stream, offer)).join('')}</tbody>
+      </table>
+    </div>`;
+  } else {
+    html += `<div class="empty">
+      <span class="empty__icon" aria-hidden="true"><svg class="icon"><use href="#i-offers"/></svg></span>
+      <p class="empty__title">В потоке пока нет офферов</p>
+      <p class="empty__text">Добавьте первый оффер — доли распределятся автоматически.</p>
+    </div>`;
+  }
+  html += addOfferForm(stream);
+  if (stream.dirty) {
+    html += `<footer class="stream__actions">
+      <p class="stream__hint">Изменения сохранены локально и ещё не отправлены в Keitaro.</p>
+      <div class="stream__buttons">
+        <button class="btn" data-cancel="${stream.id}" type="button">Отменить изменения</button>
+        <button class="btn btn--primary" data-push="${stream.id}" type="button">
+          <svg class="icon" aria-hidden="true"><use href="#i-upload"/></svg><span>Опубликовать в Keitaro</span>
+        </button>
+      </div>
+    </footer>`;
+  }
+  return `${html}</article>`;
+}
+
+function campaignHead(campaign) {
+  const offers = campaign.streams.reduce(
+    (total, stream) => total + (stream.schema === 'landings' ? stream.offers.filter((o) => o.status !== 'removed').length : 0),
+    0,
+  );
+  const dirty = campaign.streams.filter((stream) => stream.dirty).length;
+  return `<section class="campaign-head">
+    <div>
+      <p class="eyebrow">Кампания <span class="mono">#${campaign.id}</span></p>
+      <h2 class="campaign-head__title">${esc(campaign.name)}</h2>
+    </div>
+    <dl class="meta">
+      <div class="meta__item"><dt>Потоки</dt><dd>${campaign.streams.length}</dd></div>
+      <div class="meta__item"><dt>Офферы</dt><dd>${offers}</dd></div>
+      <div class="meta__item${dirty ? ' meta__item--warning' : ''}"><dt>Не опубликовано</dt><dd>${dirty}</dd></div>
+    </dl>
+  </section>`;
+}
 
 function render() {
-  const c = state.currentCampaign;
-  let html = `<h2>${esc(c.name)} <span class="muted">#${c.id}</span></h2>`;
-  if (c.stats_error) html += `<div class="msg err">Статистика не загрузилась, цифры ниже недостоверны: ${esc(c.stats_error)}</div>`;
-  for (const s of c.streams) {
-    const isOffers = s.schema === 'landings';
-    const dirtyCls = s.dirty ? 'dirty' : '';
-    html += `<div class="card ${dirtyCls}"><div class="card-head"><strong>${esc(s.name || 'Поток')}</strong>`;
-    html += `<span class="muted">${isOffers ? 'поток с офферами' : 'поток-редирект — без офферов'}</span>`;
-    if (s.dirty) html += `<span class="badge pending">не отправлено в Keitaro</span>`;
-    else if (isOffers) html += `<span class="badge sync">синхронизирован</span>`;
-    html += `</div>`;
-    if (!isOffers) { html += `<p class="muted">Этот поток настроен напрямую в Keitaro, обёртка его не меняет.</p></div>`; continue; }
-    if (!s.offers.length) html += `<p class="muted">В потоке пока нет офферов — добавьте первый ниже.</p>`;
-    html += `<div class="table-wrap"><table><thead><tr><th>Оффер</th><th class="num">Доля, %</th><th>Статус</th><th>Закрепить долю</th><th class="num">Клики</th><th class="num">Уники</th><th class="num">Конверсии</th><th class="num">Доход</th><th class="num">Расход</th><th class="num">Профит</th><th></th></tr></thead><tbody>`;
-    for (const o of s.offers) {
-      const st = o.stats || {};
-      const removed = o.status === 'removed';
-      const staged = removed || o.status === 'pending_remove';
-      const rowCls = staged ? 'removed' : '';
-      const statusBadge = o.status === 'pending_add' ? '<span class="badge pending">не отправлен</span>'
-        : o.status === 'pending_remove' ? '<span class="badge pending">к удалению</span>'
-        : o.status === 'removed' ? '<span class="badge removed">в архиве</span>' : '';
-      html += `<tr class="${rowCls}">
-        <td data-label="Оффер">${esc(o.name)} <span class="muted">#${o.offer_id}</span></td>
-        <td class="num" data-label="Доля, %">${o.share}</td>
-        <td data-label="Статус">${statusBadge}</td>
-        <td data-label="Закрепить"><input type="checkbox" data-pin="${o.offer_id}" data-stream="${s.id}" title="Закрепить долю — не участвовать в пересчёте" ${o.pinned ? 'checked' : ''} ${staged ? 'disabled' : ''}></td>
-        <td class="num" data-label="Клики">${fmt(st.clicks)}</td><td class="num" data-label="Уники">${fmt(st.unique_clicks)}</td><td class="num" data-label="Конверсии">${fmt(st.conversions)}</td>
-        <td class="num" data-label="Доход">${fmt(st.revenue)}</td><td class="num" data-label="Расход">${fmt(st.cost)}</td><td class="num" data-label="Профит">${fmt(st.profit)}</td>
-        <td class="actions" data-label="">
-          ${removed
-            ? `<button class="btn restore small" data-restore="${o.offer_id}" data-stream="${s.id}">Вернуть в поток</button>`
-            : staged ? '' : `<button class="btn danger small" data-del="${o.offer_id}" data-stream="${s.id}">Убрать из потока</button>`}
-        </td></tr>`;
-    }
-    html += `</tbody></table></div>
-      <div class="row add-offer">
-        <div><label>Добавить оффер в поток</label>
-          <div class="combo">
-            <input type="text" class="combo-input" data-combo="${s.id}" autocomplete="off" spellcheck="false"
-              role="combobox" aria-expanded="false" aria-autocomplete="list" aria-controls="combo-list-${s.id}"
-              placeholder="Начните вводить название или ID оффера">
-            <ul class="combo-list" id="combo-list-${s.id}" role="listbox" hidden></ul>
-          </div>
-        </div>
-        <div><button class="btn primary" data-add="${s.id}">Добавить в поток</button></div>
-      </div>`;
-    if (s.dirty) {
-      html += `<div class="row add-offer">
-        <button class="btn primary" data-push="${s.id}">Отправить изменения в Keitaro</button>
-        <button class="btn" data-cancel="${s.id}">Отменить изменения</button>
-      </div>`;
-    }
-    html += `</div>`;
+  const campaign = state.currentCampaign;
+  let html = campaignHead(campaign);
+  if (campaign.stats_error) {
+    html += `<div class="msg err">Статистика загрузилась не полностью: ${esc(campaign.stats_error)}</div>`;
   }
+  html += campaign.streams.map(renderStream).join('');
   $('e-body').innerHTML = html;
-
-  $('e-body').querySelectorAll('[data-del]').forEach(b => b.onclick = () => changeOffer('DELETE', b, b.dataset.del, b.dataset.stream));
-  $('e-body').querySelectorAll('[data-add]').forEach(b => b.onclick = () => addFromCombo(b.dataset.add));
-  $('e-body').querySelectorAll('[data-combo]').forEach(inp => makeCombo(
-    inp,
-    offerFetcher(inp.dataset.combo),
-    (it) => { inp.value = `${it.name} (#${it.id})`; inp.dataset.selectedId = it.id; },
-  ));
-  $('e-body').querySelectorAll('[data-restore]').forEach(b => b.onclick = () => restoreOffer(b, b.dataset.restore, b.dataset.stream));
-  $('e-body').querySelectorAll('[data-push]').forEach(b => b.onclick = () => pushStream(b, b.dataset.push));
-  $('e-body').querySelectorAll('[data-cancel]').forEach(b => b.onclick = () => cancelStream(b, b.dataset.cancel));
-  $('e-body').querySelectorAll('[data-pin]').forEach(cb => cb.onchange = () => pinOffer(cb, cb.dataset.pin, cb.dataset.stream, cb.checked));
+  wireStreamActions();
 }
 
-async function runAction(btn, action, okText, kind, onError) {
-  if (btn) btn.disabled = true;
+async function runAction(button, action, okText, kind, onError) {
+  setBusy(button, true);
   try {
     state.currentCampaign = await action();
     $('e-msg').innerHTML = '';
     render();
     setStatus(okText, kind);
     toast(okText, true);
-  } catch (e) {
-    show($('e-msg'), e.message, false);
-    setStatus(e.message, 'err');
-    toast(e.message, false);
+  } catch (error) {
+    show($('e-msg'), error.message, false);
+    setStatus(error.message, 'err');
+    toast(error.message, false);
     if (onError) onError();
-    else if (btn) btn.disabled = false;
+    else setBusy(button, false);
   }
 }
 
-function changeOffer(method, btn, offerId, streamId) {
+async function changeOffer(method, button, offerId, streamId) {
   if (!offerId) return;
-  if (method === 'DELETE' && !confirm('Убрать оффер из потока? Он останется в архиве обёртки, пока вы не отмените изменение.')) return;
-  const id = state.currentCampaign.id;
+  if (method === 'DELETE') {
+    const confirmed = await confirmAction({
+      title: 'Убрать оффер из потока?',
+      text: `Оффер #${offerId} получит долю 0% и уйдёт в архив обёртки. В Keitaro изменение применится после публикации потока.`,
+      confirmLabel: 'Убрать оффер',
+      danger: true,
+    });
+    if (!confirmed) return;
+  }
+  const campaignId = state.currentCampaign.id;
   const call = method === 'POST'
-    ? () => api(`/api/campaigns/${id}/offers`, { method, body: JSON.stringify({ offer_id: Number(offerId), stream_id: Number(streamId) }) })
-    : () => api(`/api/campaigns/${id}/offers/${offerId}?stream_id=${streamId}`, { method });
+    ? () => api(`/api/campaigns/${campaignId}/offers`, {
+        method,
+        body: JSON.stringify({ offer_id: Number(offerId), stream_id: Number(streamId) }),
+      })
+    : () => api(`/api/campaigns/${campaignId}/offers/${offerId}?stream_id=${streamId}`, { method });
   const okText = method === 'POST'
-    ? `Оффер #${offerId} добавлен в поток, доли пересчитаны. Изменения ещё не отправлены в Keitaro`
-    : `Оффер #${offerId} убран из потока (доля 0%). Изменения ещё не отправлены в Keitaro`;
-  return runAction(btn, call, okText, 'warn');
+    ? `Оффер #${offerId} добавлен, доли пересчитаны`
+    : `Оффер #${offerId} убран из потока и перемещён в архив`;
+  return runAction(button, call, okText, 'warn');
 }
 
-function restoreOffer(btn, offerId, streamId) {
-  const id = state.currentCampaign.id;
+function restoreOffer(button, offerId, streamId) {
+  const campaignId = state.currentCampaign.id;
   return runAction(
-    btn,
-    () => api(`/api/campaigns/${id}/offers/${offerId}/restore?stream_id=${streamId}`, { method: 'POST' }),
-    `Оффер #${offerId} возвращён в поток. Отправьте изменения в Keitaro, чтобы закрепить`,
+    button,
+    () => api(`/api/campaigns/${campaignId}/offers/${offerId}/restore?stream_id=${streamId}`, { method: 'POST' }),
+    `Оффер #${offerId} возвращён в поток`,
     'warn',
   );
 }
 
-function pushStream(btn, streamId) {
-  const id = state.currentCampaign.id;
-  setStatus('Отправляю изменения в Keitaro…');
+function pushStream(button, streamId) {
+  const campaignId = state.currentCampaign.id;
+  setStatus('Публикую изменения в Keitaro…');
   return runAction(
-    btn,
-    () => api(`/api/campaigns/${id}/push?stream_id=${streamId}`, { method: 'POST' }),
-    'Изменения отправлены в Keitaro',
+    button,
+    () => api(`/api/campaigns/${campaignId}/push?stream_id=${streamId}`, { method: 'POST' }),
+    'Изменения опубликованы в Keitaro',
     'ok',
   );
 }
 
-function cancelStream(btn, streamId) {
-  if (!confirm('Отменить все не отправленные изменения в этом потоке?')) return;
-  const id = state.currentCampaign.id;
+async function cancelStream(button, streamId) {
+  const confirmed = await confirmAction({
+    title: 'Отменить изменения?',
+    text: 'Все неопубликованные изменения этого потока будут отброшены. Поток вернётся к состоянию Keitaro.',
+    confirmLabel: 'Отменить изменения',
+  });
+  if (!confirmed) return;
+  const campaignId = state.currentCampaign.id;
   return runAction(
-    btn,
-    () => api(`/api/campaigns/${id}/cancel?stream_id=${streamId}`, { method: 'POST' }),
-    'Изменения отменены, поток снова синхронизирован с Keitaro',
+    button,
+    () => api(`/api/campaigns/${campaignId}/cancel?stream_id=${streamId}`, { method: 'POST' }),
+    'Изменения отменены, поток снова синхронизирован',
     'ok',
   );
 }
 
-function pinOffer(cb, offerId, streamId, pinned) {
-  const id = state.currentCampaign.id;
+function pinOffer(checkbox, offerId, streamId, pinned) {
+  const campaignId = state.currentCampaign.id;
+  checkbox.disabled = true;
   return runAction(
     null,
-    () => api(`/api/campaigns/${id}/offers/${offerId}/pin?stream_id=${streamId}&pinned=${pinned}`, { method: 'POST' }),
+    () => api(`/api/campaigns/${campaignId}/offers/${offerId}/pin?stream_id=${streamId}&pinned=${pinned}`, { method: 'POST' }),
     pinned
-      ? `Доля оффера #${offerId} закреплена — пересчёты её не тронут`
+      ? `Доля оффера #${offerId} закреплена — пересчёты её не изменят`
       : `Доля оффера #${offerId} больше не закреплена`,
     'warn',
-    () => { cb.checked = !pinned; },
+    () => {
+      checkbox.checked = !pinned;
+      checkbox.disabled = false;
+    },
   );
 }
 
-const COMBO_DEBOUNCE_MS = 150;
-const COMBO_LIMIT = 20;
-
-function comboStream(streamId) {
-  return state.currentCampaign.streams.find(s => String(s.id) === String(streamId));
+function wireStreamActions() {
+  const body = $('e-body');
+  body.querySelectorAll('[data-del]').forEach((button) => {
+    button.onclick = () => changeOffer('DELETE', button, button.dataset.del, button.dataset.stream);
+  });
+  body.querySelectorAll('[data-add]').forEach((button) => {
+    button.onclick = () => addFromCombo(button);
+  });
+  body.querySelectorAll('[data-restore]').forEach((button) => {
+    button.onclick = () => restoreOffer(button, button.dataset.restore, button.dataset.stream);
+  });
+  body.querySelectorAll('[data-push]').forEach((button) => {
+    button.onclick = () => pushStream(button, button.dataset.push);
+  });
+  body.querySelectorAll('[data-cancel]').forEach((button) => {
+    button.onclick = () => cancelStream(button, button.dataset.cancel);
+  });
+  body.querySelectorAll('[data-pin]').forEach((checkbox) => {
+    checkbox.onchange = () => pinOffer(checkbox, checkbox.dataset.pin, checkbox.dataset.stream, checkbox.checked);
+  });
+  body.querySelectorAll('[data-combo]').forEach((input) => {
+    makeCombo(
+      input,
+      offerFetcher(input.dataset.combo),
+      (item) => {
+        input.value = `${item.name} (#${item.id})`;
+        input.dataset.selectedId = item.id;
+      },
+    );
+  });
 }
 
-function appendHighlighted(li, name, needle) {
-  const idx = needle ? name.toLowerCase().indexOf(needle) : -1;
-  if (idx < 0) { li.append(document.createTextNode(name)); return; }
-  li.append(document.createTextNode(name.slice(0, idx)));
+function addFromCombo(button) {
+  const streamId = button.dataset.add;
+  const input = $('e-body').querySelector(`[data-combo="${streamId}"]`);
+  const typed = input.value.trim();
+  const offerId = input.dataset.selectedId || (/^\d+$/.test(typed) ? typed : '');
+  if (!offerId) {
+    show($('e-msg'), 'Выберите оффер из списка или введите его ID', false);
+    return;
+  }
+  changeOffer('POST', button, offerId, streamId);
+}
+
+function comboStream(streamId) {
+  return state.currentCampaign.streams.find((stream) => String(stream.id) === String(streamId));
+}
+
+function appendHighlighted(item, name, needle) {
+  const index = needle ? name.toLowerCase().indexOf(needle) : -1;
+  if (index < 0) {
+    item.append(document.createTextNode(name));
+    return;
+  }
+  item.append(document.createTextNode(name.slice(0, index)));
   const mark = document.createElement('mark');
-  mark.textContent = name.slice(idx, idx + needle.length);
-  li.append(mark, document.createTextNode(name.slice(idx + needle.length)));
+  mark.textContent = name.slice(index, index + needle.length);
+  item.append(mark, document.createTextNode(name.slice(index + needle.length)));
 }
 
 function closeCombo(ui) {
@@ -237,26 +453,30 @@ function renderComboOptions(ui, items) {
   ui.items = items;
   ui.list.innerHTML = '';
   if (!items.length) {
-    const li = document.createElement('li');
-    li.className = 'combo-empty';
-    li.setAttribute('role', 'option');
-    li.setAttribute('aria-disabled', 'true');
-    li.textContent = 'Ничего не найдено';
-    ui.list.append(li);
+    const item = document.createElement('li');
+    item.className = 'combo-empty';
+    item.setAttribute('role', 'option');
+    item.setAttribute('aria-disabled', 'true');
+    item.textContent = 'Ничего не найдено';
+    ui.list.append(item);
   }
   const needle = ui.query.trim().toLowerCase();
-  for (const it of items) {
-    const li = document.createElement('li');
-    li.setAttribute('role', 'option');
-    li.id = `${ui.list.id}-opt-${it.id}`;
-    li.dataset.offerId = it.id;
-    appendHighlighted(li, it.name, needle);
+  for (const entry of items) {
+    const item = document.createElement('li');
+    item.setAttribute('role', 'option');
+    item.setAttribute('aria-selected', 'false');
+    item.id = `${ui.list.id}-opt-${entry.id}`;
+    item.dataset.offerId = entry.id;
+    appendHighlighted(item, entry.name, needle);
     const idSpan = document.createElement('span');
-    idSpan.className = 'muted';
-    idSpan.textContent = ` #${it.id}`;
-    li.append(idSpan);
-    li.onmousedown = (e) => { e.preventDefault(); selectComboOption(ui, it); };
-    ui.list.append(li);
+    idSpan.className = 'muted mono';
+    idSpan.textContent = `#${entry.id}`;
+    item.append(idSpan);
+    item.onmousedown = (event) => {
+      event.preventDefault();
+      selectComboOption(ui, entry);
+    };
+    ui.list.append(item);
   }
   ui.list.hidden = false;
   ui.input.setAttribute('aria-expanded', 'true');
@@ -268,23 +488,28 @@ async function refreshCombo(ui) {
   let rows;
   try {
     rows = await ui.fetchItems(query);
-  } catch (e) { return; }
+  } catch (error) {
+    return;
+  }
   if (ui.query !== query) return;
   renderComboOptions(ui, rows);
 }
 
-function selectComboOption(ui, it) {
-  ui.onSelect(it);
+function selectComboOption(ui, item) {
+  ui.onSelect(item);
   closeCombo(ui);
 }
 
 function moveComboActive(ui, delta) {
-  const opts = [...ui.list.querySelectorAll('li[data-offer-id]')];
-  if (!opts.length) return;
-  ui.active = (ui.active + delta + opts.length) % opts.length;
-  opts.forEach((li, i) => li.classList.toggle('active', i === ui.active));
-  ui.input.setAttribute('aria-activedescendant', opts[ui.active].id);
-  opts[ui.active].scrollIntoView({ block: 'nearest' });
+  const options = [...ui.list.querySelectorAll('li[data-offer-id]')];
+  if (!options.length) return;
+  ui.active = (ui.active + delta + options.length) % options.length;
+  options.forEach((item, index) => {
+    item.classList.toggle('active', index === ui.active);
+    item.setAttribute('aria-selected', String(index === ui.active));
+  });
+  ui.input.setAttribute('aria-activedescendant', options[ui.active].id);
+  options[ui.active].scrollIntoView({ block: 'nearest' });
 }
 
 function makeCombo(input, fetchItems, onSelect) {
@@ -298,22 +523,25 @@ function makeCombo(input, fetchItems, onSelect) {
     fetchItems,
     onSelect,
   };
-  input.onfocus = () => { ui.query = ''; refreshCombo(ui); };
+  input.onfocus = () => {
+    ui.query = '';
+    refreshCombo(ui);
+  };
   input.oninput = () => {
     ui.query = input.value;
     input.dataset.selectedId = '';
     clearTimeout(ui.timer);
     ui.timer = setTimeout(() => refreshCombo(ui), COMBO_DEBOUNCE_MS);
   };
-  input.onkeydown = (e) => {
-    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-      e.preventDefault();
+  input.onkeydown = (event) => {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
       if (ui.list.hidden) refreshCombo(ui);
-      else moveComboActive(ui, e.key === 'ArrowDown' ? 1 : -1);
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
+      else moveComboActive(ui, event.key === 'ArrowDown' ? 1 : -1);
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
       if (!ui.list.hidden && ui.active >= 0) selectComboOption(ui, ui.items[ui.active]);
-    } else if (e.key === 'Escape' || e.key === 'Tab') {
+    } else if (event.key === 'Escape' || event.key === 'Tab') {
       closeCombo(ui);
     }
   };
@@ -323,89 +551,114 @@ function makeCombo(input, fetchItems, onSelect) {
 function offerFetcher(streamId) {
   return async (query) => {
     const rows = await api(`/api/offers/search?q=${encodeURIComponent(query)}&limit=${COMBO_LIMIT}`);
-    const used = new Set((comboStream(streamId)?.offers ?? []).filter(o => o.status !== 'removed').map(o => o.offer_id));
-    return rows.filter(o => !used.has(o.id));
+    const used = new Set(
+      (comboStream(streamId)?.offers ?? []).filter((offer) => offer.status !== 'removed').map((offer) => offer.offer_id),
+    );
+    return rows.filter((offer) => !used.has(offer.id));
   };
-}
-
-function addFromCombo(streamId) {
-  const input = $('e-body').querySelector(`[data-combo="${streamId}"]`);
-  const typed = input.value.trim();
-  const offerId = input.dataset.selectedId || (/^\d+$/.test(typed) ? typed : '');
-  if (!offerId) { show($('e-msg'), 'Выберите оффер из списка или введите его ID', false); return; }
-  changeOffer('POST', input, offerId, streamId);
 }
 
 function renderOffers(filter) {
   const needle = filter.trim().toLowerCase();
-  const items = state.dict.offers.filter(o => !needle || o.name.toLowerCase().includes(needle) || String(o.id) === needle);
+  const items = state.dict.offers.filter(
+    (offer) => !needle || offer.name.toLowerCase().includes(needle) || String(offer.id) === needle,
+  );
+  $('offers-count').textContent = `${items.length} ${plural(items.length, ['оффер', 'оффера', 'офферов'])}`;
   $('offers-list').innerHTML = items.length
-    ? items.map(o => `<div class="chip">${esc(o.name)} <span class="muted">#${o.id}</span></div>`).join('')
-    : '<span class="muted">Ничего не найдено</span>';
+    ? items.map((offer) => `<div class="chip">
+        <span class="chip__name">${esc(offer.name)}</span>
+        <span class="chip__id mono">#${offer.id}</span>
+      </div>`).join('')
+    : '<p class="empty-inline">Ничего не найдено</p>';
 }
 
-$('tab-create').onclick = () => switchTab('create');
-$('tab-edit').onclick = () => switchTab('edit');
-function switchTab(name) {
-  $('view-create').classList.toggle('hidden', name !== 'create');
-  $('view-edit').classList.toggle('hidden', name !== 'edit');
-  $('tab-create').classList.toggle('active', name === 'create');
-  $('tab-edit').classList.toggle('active', name === 'edit');
+function switchTab(name, focus = false) {
+  const createActive = name === 'create';
+  $('view-create').classList.toggle('hidden', !createActive);
+  $('view-edit').classList.toggle('hidden', createActive);
+  for (const tab of [$('tab-create'), $('tab-edit')]) {
+    const active = tab.id === (createActive ? 'tab-create' : 'tab-edit');
+    tab.classList.toggle('is-active', active);
+    tab.setAttribute('aria-selected', String(active));
+    tab.tabIndex = active ? 0 : -1;
+    if (active && focus) tab.focus();
+  }
 }
 
-$('create-form').onsubmit = async (e) => {
-  e.preventDefault();
+const tabs = [$('tab-create'), $('tab-edit')];
+tabs.forEach((tab, index) => {
+  tab.addEventListener('click', () => switchTab(index === 0 ? 'create' : 'edit'));
+  tab.addEventListener('keydown', (event) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    const target = event.key === 'Home' ? 0 : event.key === 'End' ? 1 : index === 0 ? 1 : 0;
+    switchTab(target === 0 ? 'create' : 'edit', true);
+  });
+});
+
+$('create-form').onsubmit = async (event) => {
+  event.preventDefault();
+  const button = event.target.querySelector('button[type="submit"]');
   const body = {
     name: $('c-name').value.trim(),
-    geo: $('c-geo').value.trim(),
+    geo: $('c-geo').value.trim().toUpperCase(),
     offer_id: Number($('c-offer').value),
     domain_id: $('c-domain').value ? Number($('c-domain').value) : null,
     group_id: $('c-group').value ? Number($('c-group').value) : null,
     source_id: $('c-source').value ? Number($('c-source').value) : null,
   };
-  const btn = e.target.querySelector('button[type=submit]');
-  btn.disabled = true;
+  setBusy(button, true);
   try {
-    const r = await api('/api/campaigns', { method: 'POST', body: JSON.stringify(body) });
-    show($('c-msg'), `Создана кампания #${r.id} «${r.name}» — откройте её в редакторе`, true);
-    $('e-id').value = r.id;
+    const campaign = await api('/api/campaigns', { method: 'POST', body: JSON.stringify(body) });
+    show($('c-msg'), `Создана кампания #${campaign.id} «${campaign.name}» — откройте её в редакторе`, true);
+    toast(`Кампания #${campaign.id} создана`, true);
+    $('e-id').value = campaign.id;
+    $('e-id').dataset.selectedId = String(campaign.id);
     loadRecent();
-  } catch (e2) { show($('c-msg'), e2.message, false); } finally { btn.disabled = false; }
+  } catch (error) {
+    show($('c-msg'), error.message, false);
+    toast(error.message, false);
+  } finally {
+    setBusy(button, false);
+  }
 };
 
-$('e-load').onclick = () => {
-  const el = $('e-id');
-  const id = el.dataset.selectedId || (/^\d+$/.test(el.value.trim()) ? el.value.trim() : '');
-  if (!id) return show($('e-msg'), 'Введите ID кампании или выберите её из списка', false);
-  loadCampaign(id);
-};
-makeCombo(
-  $('e-id'),
-  (query) => api(`/api/campaigns/search?q=${encodeURIComponent(query)}&limit=${COMBO_LIMIT}`),
-  (it) => {
-    $('e-id').value = `${it.name} (#${it.id})`;
-    $('e-id').dataset.selectedId = String(it.id);
-    loadCampaign(String(it.id));
-  },
-);
+$('e-load').onclick = () => loadCampaign(selectedCampaignId());
 $('e-open').onclick = () => {
   if (state.currentCampaign) window.open(`${state.currentCampaign.keitaro_url}/admin/#!/campaigns/`, '_blank');
 };
 $('e-offers').onclick = () => {
   const panel = $('offers-panel');
-  panel.classList.toggle('hidden');
-  $('e-offers').textContent = panel.classList.contains('hidden') ? 'Показать все офферы' : 'Скрыть все офферы';
-  if (!panel.classList.contains('hidden')) { renderOffers($('offers-filter').value); $('offers-filter').focus(); }
-};
-$('offers-filter').oninput = (e) => renderOffers(e.target.value);
-$('e-from').onchange = () => { if ($('e-id').value) $('e-load').click(); };
-$('e-to').onchange = () => { if ($('e-id').value) $('e-load').click(); };
-$('e-recent').onchange = (e) => {
-  if (e.target.value) {
-    $('e-id').value = e.target.value;
-    $('e-id').dataset.selectedId = e.target.value;
-    loadCampaign(e.target.value);
+  const hidden = panel.classList.toggle('hidden');
+  $('e-offers').setAttribute('aria-expanded', String(!hidden));
+  $('e-offers').querySelector('span').textContent = hidden ? 'Все офферы' : 'Скрыть офферы';
+  if (!hidden) {
+    renderOffers($('offers-filter').value);
+    $('offers-filter').focus();
   }
 };
+$('offers-filter').oninput = (event) => renderOffers(event.target.value);
+$('e-from').onchange = () => {
+  if (state.currentCampaign) loadCampaign(String(state.currentCampaign.id));
+};
+$('e-to').onchange = () => {
+  if (state.currentCampaign) loadCampaign(String(state.currentCampaign.id));
+};
+$('e-recent').onchange = (event) => {
+  if (!event.target.value) return;
+  $('e-id').value = event.target.value;
+  $('e-id').dataset.selectedId = event.target.value;
+  loadCampaign(event.target.value);
+};
+
+makeCombo(
+  $('e-id'),
+  (query) => api(`/api/campaigns/search?q=${encodeURIComponent(query)}&limit=${COMBO_LIMIT}`),
+  (item) => {
+    $('e-id').value = `${item.name} (#${item.id})`;
+    $('e-id').dataset.selectedId = String(item.id);
+    loadCampaign(String(item.id));
+  },
+);
 
 init();

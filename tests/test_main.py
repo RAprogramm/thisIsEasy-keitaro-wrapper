@@ -1,5 +1,7 @@
 """Tests for the application entry points and the database session helper."""
 
+import time
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
@@ -68,6 +70,23 @@ def test_rate_limit_returns_429(
     r2 = client.post("/api/campaigns", json={"name": "c", "geo": "US", "offer_id": 100})
     assert r2.status_code == 429
     assert r2.headers.get("X-Request-ID"), "429 must still carry the request id"
+
+
+def test_rate_limit_evicts_stale_buckets(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient
+) -> None:
+    from app.config import settings
+    from app.main import _rate_limit_state
+
+    monkeypatch.setattr(settings, "rate_limit_per_minute", 1000)
+    _rate_limit_state.clear()
+    stale_at = time.monotonic() - 120.0
+    for index in range(1001):
+        _rate_limit_state[f"stale-{index}"] = [stale_at]
+    r = client.post("/api/campaigns", json={"name": "c", "geo": "US", "offer_id": 100})
+    assert r.status_code in (201, 400)
+    assert len(_rate_limit_state) == 1
+    assert all(not ip.startswith("stale-") for ip in _rate_limit_state)
 
 
 def test_readyz_returns_ok(client: TestClient) -> None:

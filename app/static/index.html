@@ -3,74 +3,175 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Keitaro wrapper</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%231c1f23'/%3E%3Ctext x='50' y='70' font-size='58' text-anchor='middle' fill='white' font-family='system-ui'%3EK%3C/text%3E%3C/svg%3E">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#f3f5f7">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#14171c">
+<title>Keitaro wrapper — кампании и потоки</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='24' fill='%232f6fed'/%3E%3Ctext x='50' y='70' font-size='56' text-anchor='middle' fill='white' font-family='system-ui' font-weight='700'%3EK%3C/text%3E%3C/svg%3E">
 <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
-<div class="toast-stack" id="toast-stack" aria-live="polite" aria-atomic="true"></div>
-<header class="topbar">
-  <div class="brand">
-    <span class="logo">K</span>
-    <div>
-      <h1>Keitaro wrapper</h1>
-      <p class="tagline">обёртка над Keitaro Admin API: создаватор кампаний и редактор потоков</p>
+<a class="skip-link" href="#main">Перейти к содержимому</a>
+<svg class="sprite" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h9M19 7h1M4 17h5M15 17h5"/><circle cx="16" cy="7" r="2"/><circle cx="12" cy="17" r="2"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.34 5.66"/><path d="M20 4v7h-7"/></symbol>
+  <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 4h6v6"/><path d="m20 4-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></symbol>
+  <symbol id="i-stream" viewBox="0 0 24 24"><path d="M4 6h16M7 12h10M10 18h4"/></symbol>
+  <symbol id="i-redirect" viewBox="0 0 24 24"><path d="M4 12h12"/><path d="m12 6 6 6-6 6"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4"/><path d="m6 10 6-6 6 6"/><path d="M4 20h16"/></symbol>
+  <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h9a7 7 0 0 1 0 14h-3"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/><path d="m6 7 1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.3 3.9 2 18a2 2 0 0 0 1.7 3h16.6a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 13 4 4L19 7"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+  <symbol id="i-offers" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h10M7 13h6"/></symbol>
+</svg>
+
+<div class="toast-stack" id="toast-stack" aria-live="polite" aria-atomic="false"></div>
+
+<header class="app-header">
+  <div class="app-header__inner">
+    <div class="brand">
+      <span class="brand__mark" aria-hidden="true">K</span>
+      <span class="brand__text">
+        <span class="brand__name">Keitaro wrapper</span>
+        <span class="brand__tagline">Кампании и потоки Keitaro в одном окне</span>
+      </span>
+    </div>
+    <div class="tabs" role="tablist" aria-label="Разделы">
+      <button id="tab-create" class="tabs__tab is-active" role="tab" aria-selected="true" aria-controls="view-create" type="button">
+        <svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg><span>Создать кампанию</span>
+      </button>
+      <button id="tab-edit" class="tabs__tab" role="tab" aria-selected="false" aria-controls="view-edit" tabindex="-1" type="button">
+        <svg class="icon" aria-hidden="true"><use href="#i-sliders"/></svg><span>Редактор кампании</span>
+      </button>
     </div>
   </div>
-  <nav class="tabs">
-    <button id="tab-create" class="active">Создать кампанию</button>
-    <button id="tab-edit">Редактор кампании</button>
-  </nav>
 </header>
 
-<section id="view-create" class="card">
-  <form id="create-form">
-    <div class="row">
-      <div><label>Название (префикс добавится сам)</label><input id="c-name" required placeholder="campaign1"></div>
-      <div><label>Гео (ISO-код)</label><input id="c-geo" required maxlength="2" placeholder="US"></div>
-      <div><label>Оффер</label><select id="c-offer" required></select></div>
-    </div>
-    <div class="row">
-      <div><label>Домен</label><select id="c-domain"></select></div>
-      <div><label>Группа</label><select id="c-group"></select></div>
-      <div><label>Источник</label><select id="c-source"></select></div>
-    </div>
-    <button class="btn primary" type="submit">Создать кампанию в Keitaro</button>
-    <div id="c-msg"></div>
-  </form>
-</section>
-
-<section id="view-edit" class="hidden">
+<main id="main" class="app-main" tabindex="-1">
+<section id="view-create" class="panel" role="tabpanel" aria-labelledby="tab-create">
   <div class="card">
-    <div class="row">
-      <div><label>ID кампании в Keitaro</label>
-        <div class="combo">
-          <input id="e-id" type="text" inputmode="numeric" spellcheck="false"
-            placeholder="Название или ID — есть автоподбор"
-            role="combobox" aria-expanded="false" aria-autocomplete="list" aria-controls="combo-list-campaign">
-          <ul class="combo-list" id="combo-list-campaign" role="listbox" hidden></ul>
+    <header class="card__header">
+      <h2 class="card__title">Новая кампания</h2>
+      <p class="card__subtitle">Кампания создаётся напрямую в Keitaro с выбранным оффером.</p>
+    </header>
+    <form id="create-form" class="form">
+      <div class="form-grid">
+        <div class="field field--span-6">
+          <label for="c-name">Название</label>
+          <input id="c-name" required placeholder="campaign1" autocomplete="off">
+          <p class="field__hint">К названию добавится префикс из настроек.</p>
+        </div>
+        <div class="field field--span-2">
+          <label for="c-geo">Гео</label>
+          <input id="c-geo" required maxlength="2" placeholder="US" autocomplete="off" autocapitalize="characters">
+          <p class="field__hint">ISO-код.</p>
+        </div>
+        <div class="field field--span-4">
+          <label for="c-offer">Оффер</label>
+          <select id="c-offer" required></select>
+        </div>
+        <div class="field field--span-4">
+          <label for="c-domain">Домен</label>
+          <select id="c-domain"></select>
+        </div>
+        <div class="field field--span-4">
+          <label for="c-group">Группа</label>
+          <select id="c-group"></select>
+        </div>
+        <div class="field field--span-4">
+          <label for="c-source">Источник</label>
+          <select id="c-source"></select>
         </div>
       </div>
-      <div><label>Недавно созданные этой обёрткой</label><select id="e-recent"><option value="">—</option></select></div>
-      <div><label>Статистика за период: с</label><input id="e-from" type="date"></div>
-      <div><label>по</label><input id="e-to" type="date"></div>
-    </div>
-    <div class="toolbar">
-      <button class="btn primary" id="e-load">Получить потоки из Keitaro</button>
-      <button class="btn" id="e-open" disabled>Открыть в Keitaro ↗</button>
-      <button class="btn" id="e-offers">Показать все офферы</button>
-    </div>
-    <div id="offers-panel" class="offers-panel hidden">
-      <input id="offers-filter" placeholder="Фильтр: название или ID оффера">
-      <div id="offers-list" class="offers-grid"></div>
-    </div>
-    <div id="e-msg"></div>
-  </div>
-  <div id="e-body"></div>
-  <div id="e-status" class="statusbar hidden" role="status" aria-live="polite">
-    <span class="dot"></span><span id="e-status-text"></span><span id="e-status-time" class="time"></span>
+      <div class="form__actions">
+        <button class="btn btn--primary" type="submit">
+          <svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg><span>Создать кампанию</span>
+        </button>
+        <div id="c-msg" class="form-msg" role="status" aria-live="polite"></div>
+      </div>
+    </form>
   </div>
 </section>
+
+<section id="view-edit" class="panel hidden" role="tabpanel" aria-labelledby="tab-edit">
+  <div class="card">
+    <header class="card__header">
+      <h2 class="card__title">Выбор кампании</h2>
+      <p class="card__subtitle">Загрузите потоки из Keitaro, чтобы управлять офферами и долями.</p>
+    </header>
+    <div class="form-grid card__section">
+      <div class="field field--span-5">
+        <label for="e-id">Кампания</label>
+        <div class="combo">
+          <svg class="icon combo__icon" aria-hidden="true"><use href="#i-search"/></svg>
+          <input id="e-id" type="text" inputmode="numeric" spellcheck="false" autocomplete="off"
+            placeholder="Название или ID" role="combobox" aria-expanded="false"
+            aria-autocomplete="list" aria-controls="combo-list-campaign">
+          <ul class="combo-list" id="combo-list-campaign" role="listbox" hidden></ul>
+        </div>
+        <p class="field__hint">Начните вводить название — появится автоподбор.</p>
+      </div>
+      <div class="field field--span-3">
+        <label for="e-recent">Недавние</label>
+        <select id="e-recent"><option value="">—</option></select>
+      </div>
+      <div class="field field--span-4">
+        <label for="e-from">Период статистики</label>
+        <div class="date-range">
+          <input id="e-from" type="date" aria-label="Начало периода">
+          <span class="date-range__sep" aria-hidden="true">—</span>
+          <input id="e-to" type="date" aria-label="Конец периода">
+        </div>
+      </div>
+    </div>
+    <div class="toolbar">
+      <button class="btn btn--primary" id="e-load" type="button">
+        <svg class="icon" aria-hidden="true"><use href="#i-refresh"/></svg><span>Загрузить потоки</span>
+      </button>
+      <button class="btn" id="e-open" type="button" disabled>
+        <svg class="icon" aria-hidden="true"><use href="#i-external"/></svg><span>Открыть в Keitaro</span>
+      </button>
+      <button class="btn btn--ghost" id="e-offers" type="button" aria-expanded="false" aria-controls="offers-panel">
+        <svg class="icon" aria-hidden="true"><use href="#i-list"/></svg><span>Все офферы</span>
+      </button>
+    </div>
+    <div id="offers-panel" class="offers-panel hidden">
+      <div class="offers-panel__head">
+        <h3 class="offers-panel__title">Офферы в Keitaro</h3>
+        <span id="offers-count" class="offers-panel__count"></span>
+      </div>
+      <input id="offers-filter" class="offers-panel__search" type="search" placeholder="Поиск: название или ID" aria-label="Поиск офферов" autocomplete="off">
+      <div id="offers-list" class="offers-grid"></div>
+    </div>
+    <div id="e-msg" class="form-msg" role="status" aria-live="polite"></div>
+  </div>
+  <div id="e-body" class="campaign"></div>
+</section>
+</main>
+
+<div id="e-status" class="statusbar is-idle" role="status" aria-live="polite">
+  <span class="statusbar__dot" aria-hidden="true"></span>
+  <span id="e-status-text" class="statusbar__text"></span>
+  <span id="e-status-time" class="statusbar__time"></span>
+</div>
+
+<dialog id="confirm-dialog" class="dialog" aria-labelledby="confirm-title" aria-describedby="confirm-text">
+  <form method="dialog" class="dialog__body">
+    <div class="dialog__icon" aria-hidden="true"><svg class="icon"><use href="#i-alert"/></svg></div>
+    <h2 id="confirm-title" class="dialog__title"></h2>
+    <p id="confirm-text" class="dialog__text"></p>
+    <div class="dialog__actions">
+      <button class="btn" value="cancel" type="submit">Отмена</button>
+      <button class="btn btn--danger-solid" id="confirm-ok" value="confirm" type="submit">Подтвердить</button>
+    </div>
+  </form>
+</dialog>
+
 <script type="module" src="/static/js/main.js"></script>
 </body>
 </html>
