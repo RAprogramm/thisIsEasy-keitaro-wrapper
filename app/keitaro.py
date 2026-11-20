@@ -14,6 +14,8 @@ from .config import settings
 
 logger = logging.getLogger(__name__)
 
+LANDINGS_SCHEMA = "landings"
+
 
 class KeitaroDomain(TypedDict):
     """A Keitaro domain dictionary entry."""
@@ -298,3 +300,14 @@ async def close_client() -> None:
         if _client is not None:
             await _client.close()
             _client = None
+
+
+async def ensure_offer_exists(k: KeitaroClient, offer_id: int) -> None:
+    """Raise 400 unless Keitaro knows this offer.
+
+    Args:
+        k: the Keitaro client to ask.
+        offer_id: offer id referenced by the request body.
+    """
+    if await k.get_offer(offer_id) is None:
+        raise HTTPException(400, f"Оффер {offer_id} не найден в Keitaro")

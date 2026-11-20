@@ -1,7 +1,7 @@
 """Performance benchmarks for hot paths."""
 
+from app.editor_service import rebalance
 from app.models import StreamOffer
-from app.routers.editor import _rebalance
 
 
 def test_rebalance_benchmark(benchmark: object) -> None:
@@ -17,6 +17,6 @@ def test_rebalance_benchmark(benchmark: object) -> None:
             )
             for i in range(20)
         ]
-        _rebalance(offers)
+        rebalance(offers)
 
     benchmark(run)  # type: ignore[operator]

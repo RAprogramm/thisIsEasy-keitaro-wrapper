@@ -5,8 +5,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.editor_service import rebalance
 from app.models import CampaignRecord, OfferChange, StreamOffer
-from app.routers.editor import _rebalance
 from tests.conftest import FakeKeitaro, make_offer_stream
 
 
@@ -33,12 +33,12 @@ def make_stream_offer(
 
 def test_rebalance_even() -> None:
     offers = [make_stream_offer(i) for i in range(3)]
-    _rebalance(offers)
+    rebalance(offers)
     assert [o.share for o in offers] == [34, 33, 33]
 
 
 def test_rebalance_empty() -> None:
-    assert _rebalance([]) == []
+    assert rebalance([]) == []
 
 
 def test_rebalance_respects_pinned() -> None:
@@ -47,7 +47,7 @@ def test_rebalance_respects_pinned() -> None:
         make_stream_offer(2),
         make_stream_offer(3),
     ]
-    _rebalance(offers)
+    rebalance(offers)
     assert offers[0].share == 25
     assert offers[1].share + offers[2].share == 75
     assert offers[1].share in (38, 37)
@@ -58,7 +58,7 @@ def test_rebalance_removed_gets_zero() -> None:
         make_stream_offer(1, status="active"),
         make_stream_offer(2, status="removed"),
     ]
-    _rebalance(offers)
+    rebalance(offers)
     assert offers[1].share == 0
     assert offers[0].share == 100
 

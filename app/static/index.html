@@ -333,68 +333,77 @@ function render() {
   $('e-body').querySelectorAll('[data-pin]').forEach(cb => cb.onchange = () => pinOffer(cb, cb.dataset.pin, cb.dataset.stream, cb.checked));
 }
 
-async function changeOffer(method, btn, offerId, streamId) {
+async function runAction(btn, action, okText, kind, onError) {
+  if (btn) btn.disabled = true;
+  try {
+    currentCampaign = await action();
+    $('e-msg').innerHTML = '';
+    render();
+    setStatus(okText, kind);
+  } catch (e) {
+    show($('e-msg'), e.message, false);
+    setStatus(e.message, 'err');
+    if (onError) onError();
+    else if (btn) btn.disabled = false;
+  }
+}
+
+function changeOffer(method, btn, offerId, streamId) {
   if (!offerId) return;
   if (method === 'DELETE' && !confirm('Убрать оффер из потока? Он останется в архиве обёртки, пока вы не отмените изменение.')) return;
-  btn.disabled = true;
   const id = currentCampaign.id;
-  try {
-    currentCampaign = method === 'POST'
-      ? await api(`/api/campaigns/${id}/offers`, { method, body: JSON.stringify({ offer_id: Number(offerId), stream_id: Number(streamId) }) })
-      : await api(`/api/campaigns/${id}/offers/${offerId}?stream_id=${streamId}`, { method });
-    $('e-msg').innerHTML = '';
-    render();
-    setStatus(method === 'POST'
-      ? `Оффер #${offerId} добавлен в поток, доли пересчитаны. Изменения ещё не отправлены в Keitaro`
-      : `Оффер #${offerId} убран из потока (доля 0%). Изменения ещё не отправлены в Keitaro`, 'warn');
-  } catch (e) { show($('e-msg'), e.message, false); setStatus(e.message, 'err'); btn.disabled = false; }
+  const call = method === 'POST'
+    ? () => api(`/api/campaigns/${id}/offers`, { method, body: JSON.stringify({ offer_id: Number(offerId), stream_id: Number(streamId) }) })
+    : () => api(`/api/campaigns/${id}/offers/${offerId}?stream_id=${streamId}`, { method });
+  const okText = method === 'POST'
+    ? `Оффер #${offerId} добавлен в поток, доли пересчитаны. Изменения ещё не отправлены в Keitaro`
+    : `Оффер #${offerId} убран из потока (доля 0%). Изменения ещё не отправлены в Keitaro`;
+  return runAction(btn, call, okText, 'warn');
 }
 
-async function restoreOffer(btn, offerId, streamId) {
-  btn.disabled = true;
+function restoreOffer(btn, offerId, streamId) {
   const id = currentCampaign.id;
-  try {
-    currentCampaign = await api(`/api/campaigns/${id}/offers/${offerId}/restore?stream_id=${streamId}`, { method: 'POST' });
-    $('e-msg').innerHTML = '';
-    render();
-    setStatus(`Оффер #${offerId} возвращён в поток. Отправьте изменения в Keitaro, чтобы закрепить`, 'warn');
-  } catch (e) { show($('e-msg'), e.message, false); setStatus(e.message, 'err'); btn.disabled = false; }
+  return runAction(
+    btn,
+    () => api(`/api/campaigns/${id}/offers/${offerId}/restore?stream_id=${streamId}`, { method: 'POST' }),
+    `Оффер #${offerId} возвращён в поток. Отправьте изменения в Keitaro, чтобы закрепить`,
+    'warn',
+  );
 }
 
-async function pushStream(btn, streamId) {
-  btn.disabled = true;
+function pushStream(btn, streamId) {
   const id = currentCampaign.id;
   setStatus('Отправляю изменения в Keitaro…');
-  try {
-    currentCampaign = await api(`/api/campaigns/${id}/push?stream_id=${streamId}`, { method: 'POST' });
-    $('e-msg').innerHTML = '';
-    render();
-    setStatus('Изменения отправлены в Keitaro', 'ok');
-  } catch (e) { show($('e-msg'), e.message, false); setStatus(`Не удалось отправить: ${e.message}`, 'err'); btn.disabled = false; }
+  return runAction(
+    btn,
+    () => api(`/api/campaigns/${id}/push?stream_id=${streamId}`, { method: 'POST' }),
+    'Изменения отправлены в Keitaro',
+    'ok',
+  );
 }
 
-async function cancelStream(btn, streamId) {
+function cancelStream(btn, streamId) {
   if (!confirm('Отменить все не отправленные изменения в этом потоке?')) return;
-  btn.disabled = true;
   const id = currentCampaign.id;
-  try {
-    currentCampaign = await api(`/api/campaigns/${id}/cancel?stream_id=${streamId}`, { method: 'POST' });
-    $('e-msg').innerHTML = '';
-    render();
-    setStatus('Изменения отменены, поток снова синхронизирован с Keitaro', 'ok');
-  } catch (e) { show($('e-msg'), e.message, false); setStatus(e.message, 'err'); btn.disabled = false; }
+  return runAction(
+    btn,
+    () => api(`/api/campaigns/${id}/cancel?stream_id=${streamId}`, { method: 'POST' }),
+    'Изменения отменены, поток снова синхронизирован с Keitaro',
+    'ok',
+  );
 }
 
-async function pinOffer(cb, offerId, streamId, pinned) {
+function pinOffer(cb, offerId, streamId, pinned) {
   const id = currentCampaign.id;
-  try {
-    currentCampaign = await api(`/api/campaigns/${id}/offers/${offerId}/pin?stream_id=${streamId}&pinned=${pinned}`, { method: 'POST' });
-    $('e-msg').innerHTML = '';
-    render();
-    setStatus(pinned
+  return runAction(
+    null,
+    () => api(`/api/campaigns/${id}/offers/${offerId}/pin?stream_id=${streamId}&pinned=${pinned}`, { method: 'POST' }),
+    pinned
       ? `Доля оффера #${offerId} закреплена — пересчёты её не тронут`
-      : `Доля оффера #${offerId} больше не закреплена`, 'warn');
-  } catch (e) { show($('e-msg'), e.message, false); setStatus(e.message, 'err'); cb.checked = !pinned; }
+      : `Доля оффера #${offerId} больше не закреплена`,
+    'warn',
+    () => { cb.checked = !pinned; },
+  );
 }
 
 const COMBO_DEBOUNCE_MS = 150;

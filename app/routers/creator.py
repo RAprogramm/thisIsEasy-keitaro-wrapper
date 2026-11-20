@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..cache import TtlCache
 from ..config import settings
 from ..db import get_db
-from ..keitaro import KeitaroClient, get_client
+from ..keitaro import LANDINGS_SCHEMA, KeitaroClient, ensure_offer_exists, get_client
 from ..models import CampaignRecord
 from ..schemas import (
     CampaignCreate,
@@ -20,6 +20,7 @@ from ..schemas import (
     Dictionaries,
     DictItem,
 )
+from ..search import search_items
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +82,7 @@ def _offer_stream_payload(campaign_id: int, offer_id: int) -> dict[str, Any]:
         "weight": 100,
         "state": "active",
         "collect_clicks": True,
-        "schema": "landings",
+        "schema": LANDINGS_SCHEMA,
         "action_type": "http",
         "filter_or": False,
         "filters": [],
@@ -122,14 +123,7 @@ async def search_offers(
 ) -> list[DictItem]:
     """Search offers by name or exact ID for the editor autocomplete."""
     offers = (await _load_dictionaries(k)).offers
-    needle = q.strip().casefold()
-    if not needle:
-        return offers[:limit]
-    if needle.isascii() and needle.isdigit():
-        exact = [o for o in offers if str(o.id) == needle]
-        if exact:
-            return exact
-    return [o for o in offers if needle in o.name.casefold()][:limit]
+    return search_items(offers, q, limit)
 
 
 @router.post("/campaigns", status_code=201)
@@ -154,8 +148,7 @@ async def create_campaign(
                 group_id=existing.group_id or 0,
                 source_id=existing.source_id or 0,
             )
-    if await k.get_offer(body.offer_id) is None:
-        raise HTTPException(400, f"Оффер {body.offer_id} не найден в Keitaro")
+    await ensure_offer_exists(k, body.offer_id)
 
     domain_id = _pick(await k.domains(), body.domain_id, "домен")
     group_id = _pick(await k.groups(), body.group_id, "группа")
