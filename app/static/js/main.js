@@ -1,45 +1,10 @@
-const $ = (id) => document.getElementById(id);
+import { $, esc, show, toast, setStatus, fill } from './ui.js';
+import { api, errorMessage } from './api.js';
+
 let dict = { offers: [] };
 let currentCampaign = null;
 
-function esc(v) { const d = document.createElement('div'); d.textContent = v == null ? '' : String(v); return d.innerHTML; }
-function errorMessage(data) {
-  const d = data && data.detail;
-  if (Array.isArray(d)) return d.map(e => (e.loc || []).slice(1).join('.') + ': ' + e.msg).join('; ');
-  if (typeof d === 'string') return d;
-  return JSON.stringify(data);
-}
-async function api(path, opts = {}) {
-  const r = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts });
-  const text = await r.text();
-  let data = null;
-  try { data = text ? JSON.parse(text) : null; } catch (e) { data = { detail: text }; }
-  if (!r.ok) throw new Error(errorMessage(data));
-  return data;
-}
-function show(el, text, ok) { el.innerHTML = `<div class="msg ${ok ? 'ok' : 'err'}"></div>`; el.firstChild.textContent = text; }
 
-function toast(text, ok = true) {
-  const stack = $('toast-stack');
-  if (!stack) return;
-  const el = document.createElement('div');
-  el.className = `toast ${ok ? 'ok' : 'err'}`;
-  el.setAttribute('role', ok ? 'status' : 'alert');
-  el.textContent = text;
-  stack.append(el);
-  let timer = setTimeout(() => el.remove(), ok ? 3200 : 5200);
-  el.addEventListener('mouseenter', () => clearTimeout(timer));
-  el.addEventListener('mouseleave', () => { timer = setTimeout(() => el.remove(), 1600); });
-  el.addEventListener('click', () => el.remove());
-}
-
-function setStatus(text, kind) {
-  const bar = $('e-status');
-  bar.classList.remove('hidden', 'warn', 'err');
-  if (kind) bar.classList.add(kind);
-  $('e-status-text').textContent = text;
-  $('e-status-time').textContent = new Date().toLocaleTimeString('ru-RU');
-}
 
 function syncStatus() {
   const c = currentCampaign;
@@ -52,11 +17,6 @@ function syncStatus() {
   }
 }
 
-function fill(sel, items, withEmpty) {
-  sel.innerHTML = '';
-  if (withEmpty) sel.append(new Option('— по умолчанию —', ''));
-  for (const it of items) sel.append(new Option(it.name, it.id));
-}
 
 async function init() {
   try { dict = await api('/api/dictionaries'); } catch (e) { show($('c-msg'), e.message, false); return; }
