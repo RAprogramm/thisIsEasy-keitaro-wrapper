@@ -42,11 +42,89 @@ def offer_stream(streams: Any, stream_id: int | None) -> dict[str, Any]:
     raise HTTPException(400, "В кампании нет потока с офферами")
 
 
+def active_offers(offers: list[StreamOffer]) -> list[StreamOffer]:
+    """Offers that currently receive traffic, staged additions included."""
+    return [o for o in offers if o.status in ACTIVE_STATUSES]
+
+
+def pinned_share_total(offers: list[StreamOffer]) -> int:
+    """Total share locked by pinned offers; the part rebalancing cannot move."""
+    return sum(o.share for o in active_offers(offers) if o.pinned)
+
+
+def active_share_total(offers: list[StreamOffer]) -> int:
+    """Total share the stream would publish to Keitaro."""
+    return sum(o.share for o in active_offers(offers))
+
+
+def ensure_pin_allowed(
+    offers: list[StreamOffer], target: StreamOffer, pinned: bool
+) -> None:
+    """Reject pinning that would lock more than the whole stream.
+
+    Args:
+        offers: All tracked offers of the stream.
+        target: The offer being pinned.
+        pinned: New pin state; unpinning is always allowed.
+
+    Raises:
+        HTTPException: 400 when the pinned shares would exceed 100%.
+    """
+    if not pinned:
+        return
+    total = pinned_share_total([o for o in offers if o is not target]) + target.share
+    if total > 100:
+        raise HTTPException(
+            400,
+            f"Сумма закреплённых долей станет {total}% — максимум 100%",
+        )
+
+
+def ensure_removal_keeps_shares(offers: list[StreamOffer], target: StreamOffer) -> None:
+    """Reject a removal that leaves only pinned shares that are not 100%.
+
+    Args:
+        offers: All tracked offers of the stream.
+        target: The offer about to be removed.
+
+    Raises:
+        HTTPException: 400 when the remaining offers are all pinned and do not
+            add up to 100%, because nothing is left to rebalance them.
+    """
+    remaining = [o for o in active_offers(offers) if o is not target]
+    if remaining and all(o.pinned for o in remaining):
+        total = sum(o.share for o in remaining)
+        if total != 100:
+            raise HTTPException(
+                400,
+                f"Останутся только закреплённые доли на {total}% — "
+                "сначала открепите одну из них",
+            )
+
+
+def ensure_shares_publishable(offers: list[StreamOffer]) -> None:
+    """Refuse to publish a stream whose traffic split does not add up.
+
+    Args:
+        offers: All tracked offers of the stream about to be pushed.
+
+    Raises:
+        HTTPException: 400 when no offer is active or the shares are not 100%.
+    """
+    if not active_offers(offers):
+        raise HTTPException(400, "В потоке не осталось активных офферов")
+    total = active_share_total(offers)
+    if total != 100:
+        raise HTTPException(
+            400,
+            f"Сумма долей активных офферов — {total}%, нужно 100%: "
+            "открепите долю или пересчитайте поток",
+        )
+
+
 def rebalance(offers: list[StreamOffer]) -> list[StreamOffer]:
     """Split 100% across non-pinned active offers; removed ones get 0."""
-    pinned_sum = sum(
-        o.share for o in offers if o.pinned and o.status in ACTIVE_STATUSES
-    )
+    pinned_sum = pinned_share_total(offers)
     participants = [o for o in offers if not o.pinned and o.status in ACTIVE_STATUSES]
     # Never hand out negative shares: if pinned offers already fill (or
     # overfill) the 100%, unpinned participants simply receive nothing.
@@ -111,16 +189,20 @@ async def sync_stream(
 
     rows = await local_offers(db, campaign_id, stream_id)
     dirty = is_dirty(rows)
+    externally_removed = False
     for r in rows:
         if r.status == OfferStatus.ACTIVE:
             if r.offer_id not in keitaro_ids:
                 r.status = OfferStatus.REMOVED
+                externally_removed = True
             elif (
                 not r.pinned and not dirty and keitaro_share.get(r.offer_id) is not None
             ):
                 r.share = int(cast(Any, keitaro_share[r.offer_id]))
                 r.published_share = r.share
                 r.published_pinned = r.pinned
+    if externally_removed:
+        rebalance(rows)
 
     known = {r.offer_id for r in rows}
     for o in keitaro_offers:

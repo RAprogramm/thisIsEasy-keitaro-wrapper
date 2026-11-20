@@ -12,6 +12,9 @@ from ..editor_service import (
     ACTIVE_STATUSES,
     REMOVED_STATUSES,
     build_campaign_view,
+    ensure_pin_allowed,
+    ensure_removal_keeps_shares,
+    ensure_shares_publishable,
     is_dirty,
     local_offers,
     log_change,
@@ -121,6 +124,7 @@ async def remove_offer(
     if target is None or target.status == OfferStatus.REMOVED:
         raise HTTPException(404, "Оффера нет в потоке")
     if target.status == OfferStatus.PENDING_ADD:
+        ensure_removal_keeps_shares(rows, target)
         await unlog_change(db, campaign_id, offer_id, "add")
         remaining = [r for r in rows if r is not target]
         rebalance(remaining)
@@ -132,6 +136,7 @@ async def remove_offer(
         ]
         if not remaining_active:
             raise HTTPException(400, "Нельзя удалить последний оффер потока")
+        ensure_removal_keeps_shares(rows, target)
         target.status = OfferStatus.PENDING_REMOVE
         target.share = 0
         target.pinned = False
@@ -179,6 +184,7 @@ async def pin_offer(
     target = next((r for r in rows if r.offer_id == offer_id), None)
     if target is None or target.status in REMOVED_STATUSES:
         raise HTTPException(404, "Оффер не найден в потоке")
+    ensure_pin_allowed(rows, target, pinned)
     target.pinned = pinned
     rebalance(rows)
     await db.commit()
@@ -201,6 +207,7 @@ async def push_stream(
         return await build_campaign_view(campaign_id, k, db)
 
     push_offers = [r for r in rows if r.status in ACTIVE_STATUSES]
+    ensure_shares_publishable(rows)
     await k.update_stream(sid, stream_payload(push_offers))
 
     for r in rows:

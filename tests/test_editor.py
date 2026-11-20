@@ -367,6 +367,150 @@ def test_pin_pending_remove_offer_is_404(client: TestClient, fake: FakeKeitaro) 
     assert r.status_code == 404
 
 
+def set_stream_offers(fake: FakeKeitaro, offers: list[dict[str, Any]]) -> None:
+    fake.streams[1000][1]["offers"] = offers
+
+
+def shares_of(body: dict[str, Any]) -> dict[int, int]:
+    return {o["offer_id"]: o["share"] for o in body["streams"][1]["offers"]}
+
+
+def test_unpin_is_always_allowed(client: TestClient, fake: FakeKeitaro) -> None:
+    seed_campaign(fake)
+    client.post("/api/campaigns/1000/offers/100/pin?stream_id=2&pinned=true")
+    body = client.post(
+        "/api/campaigns/1000/offers/100/pin?stream_id=2&pinned=false"
+    ).json()
+    pinned = next(o for o in body["streams"][1]["offers"] if o["offer_id"] == 100)
+    assert pinned["pinned"] is False
+
+
+def test_pin_exceeding_100_percent_is_rejected(
+    client: TestClient, fake: FakeKeitaro
+) -> None:
+    seed_campaign(fake)
+    set_stream_offers(
+        fake,
+        [
+            {"offer_id": 100, "share": 60, "state": "active"},
+            {"offer_id": 200, "share": 40, "state": "active"},
+        ],
+    )
+    client.get("/api/campaigns/1000")
+    client.post("/api/campaigns/1000/offers/100/pin?stream_id=2&pinned=true")
+    client.post("/api/campaigns/1000/push?stream_id=2")
+    fake.streams[1000][1]["offers"][1]["share"] = 50
+    r = client.post("/api/campaigns/1000/offers/200/pin?stream_id=2&pinned=true")
+    assert r.status_code == 400
+    assert "максимум 100%" in r.json()["detail"]
+
+
+def test_removal_leaving_only_pinned_shares_is_rejected(
+    client: TestClient, fake: FakeKeitaro
+) -> None:
+    seed_campaign(fake)
+    set_stream_offers(
+        fake,
+        [
+            {"offer_id": 100, "share": 25, "state": "active"},
+            {"offer_id": 200, "share": 50, "state": "active"},
+            {"offer_id": 300, "share": 25, "state": "active"},
+        ],
+    )
+    client.get("/api/campaigns/1000")
+    client.post("/api/campaigns/1000/offers/100/pin?stream_id=2&pinned=true")
+    client.post("/api/campaigns/1000/offers/200/pin?stream_id=2&pinned=true")
+    r = client.delete("/api/campaigns/1000/offers/300?stream_id=2")
+    assert r.status_code == 400
+    assert "сначала открепите" in r.json()["detail"]
+
+
+def test_removal_allowed_when_pins_fill_100(
+    client: TestClient, fake: FakeKeitaro
+) -> None:
+    seed_campaign(fake)
+    fake.offers_list = [
+        {"id": 100, "name": "offer A"},
+        {"id": 200, "name": "offer B"},
+        {"id": 300, "name": "offer C"},
+    ]
+    set_stream_offers(
+        fake,
+        [
+            {"offer_id": 100, "share": 50, "state": "active"},
+            {"offer_id": 200, "share": 50, "state": "active"},
+        ],
+    )
+    client.get("/api/campaigns/1000")
+    client.post("/api/campaigns/1000/offers/100/pin?stream_id=2&pinned=true")
+    client.post("/api/campaigns/1000/offers/200/pin?stream_id=2&pinned=true")
+    client.post("/api/campaigns/1000/offers", json={"offer_id": 300})
+    body = client.delete("/api/campaigns/1000/offers/300?stream_id=2").json()
+    assert shares_of(body) == {100: 50, 200: 50}
+
+
+def test_removing_pending_add_leaving_pinned_shares_is_rejected(
+    client: TestClient, fake: FakeKeitaro
+) -> None:
+    seed_campaign(fake)
+    fake.offers_list = [
+        {"id": 100, "name": "offer A"},
+        {"id": 200, "name": "offer B"},
+        {"id": 300, "name": "offer C"},
+    ]
+    set_stream_offers(
+        fake,
+        [
+            {"offer_id": 100, "share": 25, "state": "active"},
+            {"offer_id": 200, "share": 75, "state": "active"},
+        ],
+    )
+    client.get("/api/campaigns/1000")
+    client.post("/api/campaigns/1000/offers/100/pin?stream_id=2&pinned=true")
+    client.post("/api/campaigns/1000/offers", json={"offer_id": 300})
+    client.delete("/api/campaigns/1000/offers/200?stream_id=2")
+    r = client.delete("/api/campaigns/1000/offers/300?stream_id=2")
+    assert r.status_code == 400
+    assert "сначала открепите" in r.json()["detail"]
+
+
+def test_push_blocked_when_shares_do_not_add_up(
+    client: TestClient, fake: FakeKeitaro
+) -> None:
+    seed_campaign(fake)
+    set_stream_offers(
+        fake,
+        [
+            {"offer_id": 100, "share": 25, "state": "active"},
+            {"offer_id": 200, "share": 75, "state": "active"},
+        ],
+    )
+    client.get("/api/campaigns/1000")
+    client.post("/api/campaigns/1000/offers/100/pin?stream_id=2&pinned=true")
+    client.post("/api/campaigns/1000/push?stream_id=2")
+    fake.streams[1000][1]["offers"] = [
+        {"offer_id": 100, "share": 25, "state": "active"}
+    ]
+    body = client.get("/api/campaigns/1000").json()
+    assert shares_of(body) == {100: 25, 200: 0}
+    assert body["streams"][1]["dirty"] is True
+    r = client.post("/api/campaigns/1000/push?stream_id=2")
+    assert r.status_code == 400
+    assert "нужно 100%" in r.json()["detail"]
+
+
+def test_push_blocked_without_active_offers(
+    client: TestClient, fake: FakeKeitaro
+) -> None:
+    seed_campaign(fake)
+    client.get("/api/campaigns/1000")
+    fake.streams[1000][1]["offers"] = []
+    client.get("/api/campaigns/1000")
+    r = client.post("/api/campaigns/1000/push?stream_id=2")
+    assert r.status_code == 400
+    assert r.json()["detail"] == "В потоке не осталось активных офферов"
+
+
 def test_sync_marks_vanished_as_removed(client: TestClient, fake: FakeKeitaro) -> None:
     seed_campaign(fake)
     # Track 200 locally as active.
