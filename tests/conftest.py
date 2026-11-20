@@ -108,6 +108,10 @@ class FakeKeitaro:
         self._record("offers")
         return self.offers_list
 
+    async def get_offer(self, offer_id: int) -> dict[str, Any] | None:
+        self._record("get_offer", offer_id=offer_id)
+        return next((o for o in self.offers_list if o["id"] == offer_id), None)
+
     async def create_campaign(self, payload: dict[str, Any]) -> dict[str, Any]:
         self._record("create_campaign", payload=payload)
         if self.create_campaign_failures:

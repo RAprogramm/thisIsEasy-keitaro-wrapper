@@ -154,8 +154,7 @@ async def create_campaign(
                 group_id=existing.group_id or 0,
                 source_id=existing.source_id or 0,
             )
-    offers = await k.offers()
-    if not any(o["id"] == body.offer_id for o in offers):
+    if await k.get_offer(body.offer_id) is None:
         raise HTTPException(400, f"Оффер {body.offer_id} не найден в Keitaro")
 
     domain_id = _pick(await k.domains(), body.domain_id, "домен")

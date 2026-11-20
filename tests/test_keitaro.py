@@ -58,6 +58,30 @@ async def test_traffic_sources(httpx2_mock: respx.Router, kc: KeitaroClient) -> 
 
 
 @pytest.mark.anyio
+async def test_get_offer_found(httpx2_mock: respx.Router, kc: KeitaroClient) -> None:
+    httpx2_mock.get(f"{BASE}/offers/7").respond(200, json={"id": 7, "name": "o"})
+    assert await kc.get_offer(7) == {"id": 7, "name": "o"}
+
+
+@pytest.mark.anyio
+async def test_get_offer_missing_returns_none(
+    httpx2_mock: respx.Router, kc: KeitaroClient
+) -> None:
+    httpx2_mock.get(f"{BASE}/offers/999").respond(404, json={"error": "not found"})
+    assert await kc.get_offer(999) is None
+
+
+@pytest.mark.anyio
+async def test_get_offer_propagates_server_errors(
+    httpx2_mock: respx.Router, kc: KeitaroClient
+) -> None:
+    httpx2_mock.get(f"{BASE}/offers/5").respond(403, json={"error": "forbidden"})
+    with pytest.raises(HTTPException) as exc:
+        await kc.get_offer(5)
+    assert exc.value.status_code == 403
+
+
+@pytest.mark.anyio
 async def test_empty_response_returns_none(
     httpx2_mock: respx.Router, kc: KeitaroClient
 ) -> None:

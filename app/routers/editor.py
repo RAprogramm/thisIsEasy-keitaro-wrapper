@@ -282,7 +282,7 @@ async def add_offer(
     db: DbSession,
     k: Tracker,
 ) -> CampaignView:
-    if not any(o["id"] == body.offer_id for o in await k.offers()):
+    if await k.get_offer(body.offer_id) is None:
         raise HTTPException(400, f"Оффер {body.offer_id} не найден в Keitaro")
     stream = _offer_stream(await k.campaign_streams(campaign_id), body.stream_id)
     sid = stream["id"]

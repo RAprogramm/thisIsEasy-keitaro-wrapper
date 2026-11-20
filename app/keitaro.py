@@ -171,6 +171,19 @@ class KeitaroClient:
     async def offers(self) -> list[KeitaroOffer]:
         return cast(list[KeitaroOffer], await self._request("GET", "/offers"))
 
+    async def get_offer(self, offer_id: int) -> KeitaroOffer | None:
+        """Fetch one offer by id; ``None`` when Keitaro reports it missing.
+
+        Preferred over scanning the full ``offers()`` list: one small request
+        regardless of how many offers the tracker holds.
+        """
+        try:
+            return cast(KeitaroOffer, await self._request("GET", f"/offers/{offer_id}"))
+        except HTTPException as e:
+            if e.status_code == 404:
+                return None
+            raise
+
     # --- campaigns and streams ---
     async def create_campaign(self, payload: dict[str, Any]) -> KeitaroCampaign:
         return cast(
