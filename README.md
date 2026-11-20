@@ -53,7 +53,7 @@ Without uv: `pip install -r requirements.txt` (pinned runtime dependencies) and 
 same commands without the `uv run` prefix.
 
 <details>
-<summary><strong>Settings (`.env`)</strong></summary>
+<summary><strong>Settings (.env)</strong></summary>
 
 | Variable | Purpose |
 |---|---|
