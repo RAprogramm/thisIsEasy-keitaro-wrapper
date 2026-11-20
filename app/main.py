@@ -163,7 +163,10 @@ async def security_headers(request: Request, call_next: Any) -> Any:
 
 @app.middleware("http")
 async def rate_limit(request: Request, call_next: Any) -> Any:
-    """Simple per-IP sliding-window limiter for mutating endpoints."""
+    """Simple per-IP sliding-window limiter for mutating endpoints.
+
+    Counters are per-process by design; see README "Scaling & state".
+    """
     from starlette.responses import JSONResponse as _JR
 
     if request.method in (

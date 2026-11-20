@@ -113,6 +113,28 @@ and statistics live in Keitaro and are never duplicated.
   but the calls inside one request are awaited in sequence, not in parallel; 30 s
   timeout per call, upstream failures map to 502.
 
+## Scaling & state
+
+The service runs as a single process and keeps two pieces of state in memory:
+
+| State | Location | Why per-process is correct here |
+|---|---|---|
+| Keitaro dictionaries | `_dictionaries_cache` (TTL) | slow-changing reference data; seconds of staleness are invisible to users |
+| Rate-limit counters | `rate_limit` middleware | coarse abuse guard, not a billing quota; over-admission costs nothing |
+
+Everything that must be shared or survive a restart — campaigns, stream offers,
+idempotency keys — lives in PostgreSQL, so the app itself is otherwise stateless.
+
+Running two or more replicas (or `uvicorn --workers > 1`) makes both caches
+per-replica: the dictionary hit rate drops with fleet size and the effective rate
+limit becomes `limit × replicas`. For an internal tool that is acceptable. If it ever
+stops being acceptable, the migration path is deliberately boring:
+
+- dictionaries: shorten the TTL or move the cache to Redis/Valkey;
+- rate limiting: a Postgres counter (the database is already deployed) or the reverse proxy;
+- adopt either only after measuring hit rate, p99 and Keitaro request volume per
+  replica — evidence, not speculation.
+
 ## Deployment
 
 ```bash

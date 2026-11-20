@@ -107,7 +107,10 @@ async def _load_dictionaries(k: KeitaroClient) -> Dictionaries:
 
 @router.get("/dictionaries")
 async def dictionaries(k: Tracker) -> Dictionaries:
-    """Dictionaries for the form: domains, groups, sources, offers."""
+    """Dictionaries for the form: domains, groups, sources, offers.
+
+    Cached per-process for `dictionaries_ttl` seconds; see README "Scaling & state".
+    """
     return await _load_dictionaries(k)
 
 
