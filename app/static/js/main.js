@@ -1,5 +1,5 @@
 import { $, show, toast, setStatus, fill, confirmAction, setBusy } from './ui.js';
-import { initActivity, logEvent } from './activity.js';
+import { initActivity, logAction, logEvent } from './activity.js';
 import { api } from './api.js';
 import { state } from './state.js';
 import { esc, fmtNumber, plural } from './format.js';
@@ -32,10 +32,18 @@ async function init() {
     logEvent('err', `Не удалось загрузить справочники: ${error.message}`);
     return;
   }
-  fill($('c-offer'), state.dict.offers, false);
   fill($('c-domain'), state.dict.domains, true);
   fill($('c-group'), state.dict.groups, true);
   fill($('c-source'), state.dict.sources, true);
+  makeCombo(
+    $('c-offer'),
+    (query) => api(`/api/offers/search?q=${encodeURIComponent(query)}&limit=${COMBO_LIMIT}`),
+    (item) => {
+      $('c-offer').value = `${item.name} (#${item.id})`;
+      $('c-offer').dataset.selectedId = String(item.id);
+    },
+    'Ищу офферы…',
+  );
   loadRecent();
 }
 
@@ -84,7 +92,7 @@ async function loadCampaign(id) {
   }
   const button = $('e-load');
   setBusy(button, true);
-  setStatus('Загружаю потоки из Keitaro…');
+  logAction(`Загрузка кампании #${id} из Keitaro`);
   if (!state.currentCampaign) $('e-body').innerHTML = campaignSkeleton();
   try {
     const params = new URLSearchParams();
@@ -328,11 +336,17 @@ async function changeOffer(method, button, offerId, streamId) {
   const okText = method === 'POST'
     ? `Оффер #${offerId} добавлен, доли пересчитаны`
     : `Оффер #${offerId} убран из потока и перемещён в архив`;
+  logAction(
+    method === 'POST'
+      ? `Добавление оффера #${offerId} в поток #${streamId}`
+      : `Удаление оффера #${offerId} из потока #${streamId}`,
+  );
   return runAction(button, call, okText, 'warn');
 }
 
 function restoreOffer(button, offerId, streamId) {
   const campaignId = state.currentCampaign.id;
+  logAction(`Возврат оффера #${offerId} в поток #${streamId}`);
   return runAction(
     button,
     () => api(`/api/campaigns/${campaignId}/offers/${offerId}/restore?stream_id=${streamId}`, { method: 'POST' }),
@@ -343,7 +357,7 @@ function restoreOffer(button, offerId, streamId) {
 
 function pushStream(button, streamId) {
   const campaignId = state.currentCampaign.id;
-  setStatus('Публикую изменения в Keitaro…');
+  logAction(`Публикация потока #${streamId} в Keitaro`);
   return runAction(
     button,
     () => api(`/api/campaigns/${campaignId}/push?stream_id=${streamId}`, { method: 'POST' }),
@@ -360,6 +374,7 @@ async function cancelStream(button, streamId) {
   });
   if (!confirmed) return;
   const campaignId = state.currentCampaign.id;
+  logAction(`Отмена изменений потока #${streamId}`);
   return runAction(
     button,
     () => api(`/api/campaigns/${campaignId}/cancel?stream_id=${streamId}`, { method: 'POST' }),
@@ -371,6 +386,11 @@ async function cancelStream(button, streamId) {
 function pinOffer(checkbox, offerId, streamId, pinned) {
   const campaignId = state.currentCampaign.id;
   checkbox.disabled = true;
+  logAction(
+    pinned
+      ? `Закрепление доли оффера #${offerId}`
+      : `Открепление доли оффера #${offerId}`,
+  );
   return runAction(
     null,
     () => api(`/api/campaigns/${campaignId}/offers/${offerId}/pin?stream_id=${streamId}&pinned=${pinned}`, { method: 'POST' }),
@@ -650,25 +670,35 @@ tabs.forEach((tab, index) => {
 $('create-form').onsubmit = async (event) => {
   event.preventDefault();
   const button = event.target.querySelector('button[type="submit"]');
+  const typedOffer = $('c-offer').value.trim();
+  const offerId =
+    $('c-offer').dataset.selectedId || (/^\d+$/.test(typedOffer) ? typedOffer : '');
+  if (!offerId) {
+    show($('c-msg'), 'Выберите оффер из списка или введите его ID', false);
+    return;
+  }
   const body = {
     name: $('c-name').value.trim(),
     geo: $('c-geo').value.trim().toUpperCase(),
-    offer_id: Number($('c-offer').value),
+    offer_id: Number(offerId),
     domain_id: $('c-domain').value ? Number($('c-domain').value) : null,
     group_id: $('c-group').value ? Number($('c-group').value) : null,
     source_id: $('c-source').value ? Number($('c-source').value) : null,
   };
+  logAction(`Создание кампании «${body.name}»`);
   setBusy(button, true);
   try {
     const campaign = await api('/api/campaigns', { method: 'POST', body: JSON.stringify(body) });
     show($('c-msg'), `Создана кампания #${campaign.id} «${campaign.name}» — откройте её в редакторе`, true);
     toast(`Кампания #${campaign.id} создана`, true);
+    setStatus(`Кампания #${campaign.id} «${campaign.name}» создана`, 'ok');
     $('e-id').value = campaign.id;
     $('e-id').dataset.selectedId = String(campaign.id);
     loadRecent();
   } catch (error) {
     show($('c-msg'), error.message, false);
     toast(error.message, false);
+    setStatus(error.message, 'err');
   } finally {
     setBusy(button, false);
   }

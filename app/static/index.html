@@ -75,7 +75,14 @@
         </div>
         <div class="field field--span-4">
           <label for="c-offer">Оффер</label>
-          <select id="c-offer" required></select>
+          <div class="combo">
+            <svg class="icon combo__icon" aria-hidden="true"><use href="#i-search"/></svg>
+            <input id="c-offer" type="text" class="combo-input" required placeholder="Название или ID оффера"
+              spellcheck="false" autocomplete="off" role="combobox" aria-expanded="false"
+              aria-autocomplete="list" aria-controls="combo-list-offer">
+            <ul class="combo-list" id="combo-list-offer" role="listbox" hidden></ul>
+          </div>
+          <p class="field__hint">Начните вводить название — появится автоподбор.</p>
         </div>
         <div class="field field--span-4">
           <label for="c-domain">Домен</label>

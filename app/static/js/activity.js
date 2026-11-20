@@ -43,7 +43,7 @@ function renderStatus() {
   const running = [...state.active.values()];
   const busy = running.length > 0;
   bar.classList.toggle('is-busy', busy);
-  bar.classList.remove('is-ok', 'is-warn', 'is-err');
+  bar.classList.remove('is-ok', 'is-warn', 'is-err', 'is-info');
   if (busy) {
     const latest = running[running.length - 1];
     const elapsed = Math.floor((Date.now() - running[0].startedAt) / 1000);
@@ -247,4 +247,8 @@ export function logEvent(level, text) {
   state.last = { text, kind: level, at: event.date };
   renderStatus();
   renderBadge();
+}
+
+export function logAction(text) {
+  logEvent('info', text);
 }
