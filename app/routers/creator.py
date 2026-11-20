@@ -154,11 +154,7 @@ async def create_campaign(
     group_id = _pick(await k.groups(), body.group_id, "группа")
     source_id = _pick(await k.traffic_sources(), body.source_id, "источник")
 
-    name = (
-        body.name
-        if body.name.startswith(settings.campaign_prefix)
-        else settings.campaign_prefix + body.name
-    )
+    name = body.name
 
     campaign = await _create_campaign_with_retry(
         k,

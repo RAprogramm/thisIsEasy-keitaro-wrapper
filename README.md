@@ -62,7 +62,6 @@ same commands without the `uv run` prefix.
 | `KEITARO_API_KEY` | API key (never commit it) |
 | `KEITARO_TIMEOUT` | per-request timeout in seconds, default `30` |
 | `DATABASE_URL` | SQLAlchemy connection string, default `postgresql+psycopg:///keitaro` |
-| `CAMPAIGN_PREFIX` | campaign name prefix; empty by default (set e.g. `test_surname_`) |
 | `GOOGLE_URL` | where the "geo → Google" stream redirects to |
 | `DICTIONARIES_TTL` | lifetime of the cached dictionaries response, seconds, default `60` |
 | `RATE_LIMIT_PER_MINUTE` | mutating requests per client IP per minute, default `120` |

@@ -5,7 +5,6 @@ from collections.abc import AsyncGenerator, Iterator
 from typing import Any
 
 os.environ.setdefault("TEST_DATABASE_URL", "postgresql+psycopg:///keitaro_test")
-os.environ.setdefault("CAMPAIGN_PREFIX", "test_rozanov_")
 os.environ.setdefault("KEITARO_API_KEY", "test-key")
 
 import pytest

@@ -63,7 +63,7 @@ def test_create_uses_first_dictionary_entries(client: TestClient) -> None:
     r = client.post("/api/campaigns", json={"name": "c1", "geo": "de", "offer_id": 100})
     assert r.status_code == 201
     body = r.json()
-    assert body["name"] == "test_rozanov_c1"
+    assert body["name"] == "c1"
     assert (body["domain_id"], body["group_id"], body["source_id"]) == (1, 10, 20)
 
 
@@ -84,7 +84,7 @@ def test_create_builds_two_streams(client: TestClient, fake: FakeKeitaro) -> Non
     ]
 
 
-def test_create_keeps_existing_prefix(client: TestClient) -> None:
+def test_create_sends_the_name_verbatim(client: TestClient) -> None:
     r = client.post(
         "/api/campaigns",
         json={"name": "test_rozanov_pre", "geo": "US", "offer_id": 100, "domain_id": 2},
@@ -118,7 +118,7 @@ def test_list_campaigns(client: TestClient) -> None:
     rows = client.get("/api/campaigns").json()
     assert len(rows) == 1
     assert rows[0]["geo"] == "US"
-    assert rows[0]["name"] == "test_rozanov_c1"
+    assert rows[0]["name"] == "c1"
 
 
 def test_list_campaigns_validates_limit(client: TestClient) -> None:
