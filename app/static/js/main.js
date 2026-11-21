@@ -153,17 +153,19 @@ function offerRow(stream, offer) {
     </td>
     <td class="num" data-label="Доля">
       <span class="share">
-        <span class="share__value">${share}%</span>
+        <span class="share__main">
+          <span class="share__value">${share}%</span>
+          <label class="switch" title="Закреплённая доля не участвует в пересчёте">
+            <input type="checkbox" data-pin="${offer.offer_id}" data-stream="${stream.id}"
+              aria-label="${esc(pinLabel)}" ${offer.pinned ? 'checked' : ''} ${staged ? 'disabled' : ''}>
+            <span class="switch__track" aria-hidden="true"></span>
+          </label>
+        </span>
         <span class="share__track"><span class="share__fill" style="width: ${share}%"></span></span>
       </span>
     </td>
-    <td class="center" data-label="Закрепление">
-      <label class="switch" title="Закреплённая доля не участвует в пересчёте">
-        <input type="checkbox" data-pin="${offer.offer_id}" data-stream="${stream.id}"
-          aria-label="${esc(pinLabel)}" ${offer.pinned ? 'checked' : ''} ${staged ? 'disabled' : ''}>
-        <span class="switch__track" aria-hidden="true"></span>
-      </label>
-    </td>
+    <td data-label="Статистика"></td>
+    <td data-label="Тренды"></td>
     <td class="actions" data-label="">${action}</td>
   </tr>`;
 }
@@ -225,7 +227,8 @@ function renderStream(stream) {
         <thead><tr>
           <th scope="col">Оффер</th>
           <th scope="col" class="num">Доля</th>
-          <th scope="col" class="center">Закрепление</th>
+          <th scope="col">Статистика</th>
+          <th scope="col">Тренды</th>
           <th scope="col"><span class="sr-only">Действия</span></th>
         </tr></thead>
         <tbody>${stream.offers.map((offer) => offerRow(stream, offer)).join('')}</tbody>
