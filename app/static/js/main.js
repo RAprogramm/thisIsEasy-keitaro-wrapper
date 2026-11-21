@@ -4,7 +4,7 @@ import { api } from './api.js';
 import { state } from './state.js';
 import { esc, plural } from './format.js';
 
-const COMBO_DEBOUNCE_MS = 150;
+const COMBO_DEBOUNCE_MS = 250;
 const COMBO_LIMIT = 20;
 
 function syncStatus() {
@@ -441,11 +441,16 @@ function renderComboOptions(ui, items) {
     item.setAttribute('aria-selected', 'false');
     item.id = `${ui.list.id}-opt-${entry.id}`;
     item.dataset.offerId = entry.id;
-    appendHighlighted(item, entry.name, needle);
-    const idSpan = document.createElement('span');
-    idSpan.className = 'muted mono';
-    idSpan.textContent = `#${entry.id}`;
-    item.append(idSpan);
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'combo-list__name';
+    appendHighlighted(nameSpan, entry.name, needle);
+    item.append(nameSpan);
+    if (/^\d+$/.test(String(entry.id))) {
+      const idSpan = document.createElement('span');
+      idSpan.className = 'muted mono';
+      idSpan.textContent = `#${entry.id}`;
+      item.append(idSpan);
+    }
     item.onmousedown = (event) => {
       event.preventDefault();
       selectComboOption(ui, entry);
@@ -530,6 +535,10 @@ function moveComboActive(ui, delta) {
   options[ui.active].scrollIntoView({ block: 'nearest' });
 }
 
+function suggestsOnText(input) {
+  return !input.dataset.selectedId && Boolean(input.value.trim());
+}
+
 function makeCombo(input, fetchItems, onSelect, loadingLabel = 'Ищу…') {
   const ui = {
     input,
@@ -544,21 +553,27 @@ function makeCombo(input, fetchItems, onSelect, loadingLabel = 'Ищу…') {
     onSelect,
   };
   input.onfocus = () => {
-    ui.query = '';
-    refreshCombo(ui);
+    ui.query = input.value;
+    if (suggestsOnText(input)) refreshCombo(ui);
+    else closeCombo(ui);
   };
   input.oninput = () => {
     ui.query = input.value;
     ui.requestId += 1;
     input.dataset.selectedId = '';
     clearTimeout(ui.timer);
+    if (!input.value.trim()) {
+      closeCombo(ui);
+      return;
+    }
     ui.timer = setTimeout(() => refreshCombo(ui), COMBO_DEBOUNCE_MS);
   };
   input.onkeydown = (event) => {
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault();
-      if (ui.list.hidden) refreshCombo(ui);
-      else moveComboActive(ui, event.key === 'ArrowDown' ? 1 : -1);
+      if (ui.list.hidden) {
+        if (suggestsOnText(input)) refreshCombo(ui);
+      } else moveComboActive(ui, event.key === 'ArrowDown' ? 1 : -1);
     } else if (event.key === 'Enter') {
       event.preventDefault();
       if (!ui.list.hidden && ui.active >= 0) selectComboOption(ui, ui.items[ui.active]);
@@ -591,7 +606,7 @@ function makeGeoCombo() {
     (item) => {
       const parts = $('c-geo').value.split(',');
       parts.pop();
-      $('c-geo').value = `${[...parts, item.id].join(',')},`;
+      $('c-geo').value = [...parts, item.id].join(',');
     },
     'Ищу страну…',
   );
