@@ -629,10 +629,16 @@ function renderOffers(filter) {
   );
   $('offers-count').textContent = `${items.length} ${plural(items.length, ['оффер', 'оффера', 'офферов'])}`;
   $('offers-list').innerHTML = items.length
-    ? items.map((offer) => `<div class="chip">
-        <span class="chip__name">${esc(offer.name)}</span>
-        <span class="chip__id mono">#${offer.id}</span>
-      </div>`).join('')
+    ? `<ul class="offer-list">
+        ${items
+          .map(
+            (offer) => `<li>
+              <span class="offer-list__name">${esc(offer.name)}</span>
+              <span class="offer-list__id mono">#${offer.id}</span>
+            </li>`,
+          )
+          .join('')}
+      </ul>`
     : '<p class="empty-inline">Ничего не найдено</p>';
 }
 
