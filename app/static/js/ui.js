@@ -45,9 +45,3 @@ export function toast(text, ok = true) {
   el.addEventListener('mouseleave', () => restart(1800));
   stack.append(el);
 }
-
-export function fill(select, items, withEmpty) {
-  select.innerHTML = '';
-  if (withEmpty) select.append(new Option('— не выбрано —', ''));
-  for (const item of items) select.append(new Option(item.name, item.id));
-}

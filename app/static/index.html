@@ -117,59 +117,85 @@
 </section>
 
 <section id="view-edit" class="panel hidden" role="tabpanel" aria-labelledby="tab-edit">
-  <div class="card">
-    <header class="card__header">
-      <h2 class="card__title">Выбор кампании</h2>
-      <p class="card__subtitle">Загрузите потоки из Keitaro, чтобы управлять офферами и долями.</p>
-    </header>
-    <div class="form-grid card__section">
-      <div class="field field--span-5">
-        <div class="field__label">
-          <label for="e-id">Кампания</label>
-          <span class="hint-wrap">
-            <button class="hint" type="button" aria-describedby="hint-e-id" aria-label="Пояснение к выбору кампании">?</button>
-            <span class="hint__bubble" id="hint-e-id" role="tooltip">Начните вводить название или ID — появится автоподбор по кампаниям Keitaro.</span>
-          </span>
-        </div>
-        <div class="combo">
-          <svg class="icon combo__icon" aria-hidden="true"><use href="#i-search"/></svg>
-          <input id="e-id" type="text" inputmode="numeric" spellcheck="false" autocomplete="off"
-            placeholder="Название или ID" role="combobox" aria-expanded="false"
-            aria-autocomplete="list" aria-controls="combo-list-campaign">
-          <ul class="combo-list" id="combo-list-campaign" role="listbox" hidden></ul>
+  <nav class="breadcrumb" aria-label="Навигация по разделу">
+    <button class="breadcrumb__link hidden" id="e-crumb-root" type="button">Кампании</button>
+    <span class="breadcrumb__current" id="e-crumb-root-current">Кампании</span>
+    <span class="breadcrumb__sep hidden" id="e-crumb-sep" aria-hidden="true">/</span>
+    <span class="breadcrumb__current hidden" id="e-crumb-campaign"></span>
+  </nav>
+  <div id="e-msg" class="form-msg" role="status" aria-live="polite"></div>
+
+  <div id="edit-pick">
+    <div class="card">
+      <header class="card__header">
+        <h2 class="card__title">Кампании Keitaro</h2>
+        <p class="card__subtitle">Выберите кампанию, чтобы редактировать её потоки и доли офферов.</p>
+      </header>
+      <div class="form-grid card__section">
+        <div class="field field--span-5">
+          <div class="field__label">
+            <label for="e-id">Кампания</label>
+            <span class="hint-wrap">
+              <button class="hint" type="button" aria-describedby="hint-e-id" aria-label="Пояснение к выбору кампании">?</button>
+              <span class="hint__bubble" id="hint-e-id" role="tooltip">Начните вводить название или ID — появится автоподбор по кампаниям Keitaro.</span>
+            </span>
+          </div>
+          <div class="combo">
+            <svg class="icon combo__icon" aria-hidden="true"><use href="#i-search"/></svg>
+            <input id="e-id" type="text" inputmode="numeric" spellcheck="false" autocomplete="off"
+              placeholder="Название или ID" role="combobox" aria-expanded="false"
+              aria-autocomplete="list" aria-controls="combo-list-campaign">
+            <ul class="combo-list" id="combo-list-campaign" role="listbox" hidden></ul>
+          </div>
         </div>
       </div>
-      <div class="field field--span-4 field--dates">
-        <label for="e-from">Период статистики</label>
-        <div class="date-range">
-          <input id="e-from" type="date" aria-label="Начало периода">
-          <span class="date-range__sep" aria-hidden="true">—</span>
-          <input id="e-to" type="date" aria-label="Конец периода">
-        </div>
+      <div class="toolbar">
+        <button class="btn btn--primary" id="e-load" type="button">
+          <svg class="icon" aria-hidden="true"><use href="#i-refresh"/></svg><span>Загрузить потоки</span>
+        </button>
+        <label class="autofetch" for="e-autofetch">
+          <input type="checkbox" id="e-autofetch" checked>
+          <span>Загружать автоматически</span>
+        </label>
       </div>
     </div>
-    <div class="toolbar">
-      <button class="btn btn--primary" id="e-load" type="button">
-        <svg class="icon" aria-hidden="true"><use href="#i-refresh"/></svg><span>Загрузить потоки</span>
-      </button>
-      <button class="btn" id="e-open" type="button" disabled>
-        <svg class="icon" aria-hidden="true"><use href="#i-external"/></svg><span>Открыть в Keitaro</span>
-      </button>
-      <button class="btn btn--ghost" id="e-offers" type="button" aria-expanded="false" aria-controls="offers-panel">
-        <svg class="icon" aria-hidden="true"><use href="#i-list"/></svg><span>Все офферы</span>
-      </button>
-    </div>
-    <div id="offers-panel" class="offers-panel hidden">
-      <div class="offers-panel__head">
-        <h3 class="offers-panel__title">Офферы в Keitaro</h3>
-        <span id="offers-count" class="offers-panel__count"></span>
-      </div>
-      <input id="offers-filter" class="offers-panel__search" type="search" placeholder="Поиск: название или ID" aria-label="Поиск офферов" autocomplete="off">
-      <div id="offers-list" class="offers-panel__list"></div>
-    </div>
-    <div id="e-msg" class="form-msg" role="status" aria-live="polite"></div>
   </div>
-  <div id="e-body" class="campaign"></div>
+
+  <div id="edit-streams" class="hidden">
+    <div class="card">
+      <header class="card__header">
+        <h2 class="card__title" id="e-title"></h2>
+        <p class="card__subtitle">Управляйте долями офферов и публикуйте изменения в Keitaro.</p>
+      </header>
+      <div class="form-grid card__section">
+        <div class="field field--span-4 field--dates">
+          <label for="e-from">Период статистики</label>
+          <div class="date-range">
+            <input id="e-from" type="date" aria-label="Начало периода">
+            <span class="date-range__sep" aria-hidden="true">—</span>
+            <input id="e-to" type="date" aria-label="Конец периода">
+          </div>
+        </div>
+      </div>
+      <div class="toolbar">
+        <button class="btn" id="e-open" type="button" disabled>
+          <svg class="icon" aria-hidden="true"><use href="#i-external"/></svg><span>Открыть в Keitaro</span>
+        </button>
+        <button class="btn btn--ghost" id="e-offers" type="button" aria-expanded="false" aria-controls="offers-panel">
+          <svg class="icon" aria-hidden="true"><use href="#i-list"/></svg><span>Все офферы</span>
+        </button>
+      </div>
+      <div id="offers-panel" class="offers-panel hidden">
+        <div class="offers-panel__head">
+          <h3 class="offers-panel__title">Офферы в Keitaro</h3>
+          <span id="offers-count" class="offers-panel__count"></span>
+        </div>
+        <input id="offers-filter" class="offers-panel__search" type="search" placeholder="Поиск: название или ID" aria-label="Поиск офферов" autocomplete="off">
+        <div id="offers-list" class="offers-panel__list"></div>
+      </div>
+    </div>
+    <div id="e-body" class="campaign"></div>
+  </div>
 </section>
 </main>
 

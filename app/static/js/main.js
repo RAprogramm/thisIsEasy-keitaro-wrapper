@@ -1,11 +1,47 @@
-import { $, show, toast, setStatus, fill, setBusy } from './ui.js';
+import { $, show, toast, setStatus, setBusy } from './ui.js';
 import { initActivity, logAction, logEvent } from './activity.js';
 import { api } from './api.js';
 import { state } from './state.js';
 import { esc, plural } from './format.js';
+import { makeCombo, COMBO_LIMIT } from './combo.js';
 
-const COMBO_DEBOUNCE_MS = 250;
-const COMBO_LIMIT = 20;
+function comboId(input) {
+  const typed = input.value.trim();
+  return input.dataset.selectedId || (/^\d+$/.test(typed) ? typed : '');
+}
+
+function setComboSelection(input, item) {
+  input.value = `${item.name} (#${item.id})`;
+  input.dataset.selectedId = String(item.id);
+}
+
+function reportError(message, messageEl = $('e-msg')) {
+  show(messageEl, message, false);
+  setStatus(message, 'err');
+  toast(message, false);
+}
+
+function clearEditor() {
+  state.currentCampaign = null;
+  $('e-body').innerHTML = '';
+  $('e-open').disabled = true;
+  showEditorLevel(false);
+}
+
+function showEditorLevel(streamsView) {
+  const campaign = state.currentCampaign;
+  const atStreams = streamsView && Boolean(campaign);
+  $('edit-pick').classList.toggle('hidden', atStreams);
+  $('edit-streams').classList.toggle('hidden', !atStreams);
+  $('e-crumb-root').classList.toggle('hidden', !atStreams);
+  $('e-crumb-root-current').classList.toggle('hidden', atStreams);
+  $('e-crumb-sep').classList.toggle('hidden', !atStreams);
+  $('e-crumb-campaign').classList.toggle('hidden', !atStreams);
+  if (campaign) {
+    $('e-crumb-campaign').textContent = campaign.name;
+    $('e-title').textContent = `${campaign.name} (#${campaign.id})`;
+  }
+}
 
 function syncStatus() {
   const campaign = state.currentCampaign;
@@ -19,8 +55,7 @@ function syncStatus() {
 }
 
 function selectedCampaignId() {
-  const input = $('e-id');
-  return input.dataset.selectedId || (/^\d+$/.test(input.value.trim()) ? input.value.trim() : '');
+  return comboId($('e-id'));
 }
 
 async function init() {
@@ -35,10 +70,7 @@ async function init() {
   makeCombo(
     $('c-offer'),
     (query) => api(`/api/offers/search?q=${encodeURIComponent(query)}&limit=${COMBO_LIMIT}`),
-    (item) => {
-      $('c-offer').value = `${item.name} (#${item.id})`;
-      $('c-offer').dataset.selectedId = String(item.id);
-    },
+    (item) => setComboSelection($('c-offer'), item),
     'Ищу офферы…',
   );
   makeGeoCombo();
@@ -87,12 +119,8 @@ async function loadCampaign(id) {
     render();
     syncStatus();
   } catch (error) {
-    state.currentCampaign = null;
-    $('e-body').innerHTML = '';
-    $('e-open').disabled = true;
-    show($('e-msg'), error.message, false);
-    setStatus(error.message, 'err');
-    toast(error.message, false);
+    clearEditor();
+    reportError(error.message);
   } finally {
     setBusy(button, false);
   }
@@ -123,7 +151,7 @@ function offerRow(stream, offer) {
     : `<button class="btn btn--danger btn--sm" data-del="${offer.offer_id}" data-stream="${stream.id}">
          <svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg><span>Убрать</span>
        </button>`;
-  return `<tr class="${removed ? 'is-removed' : ''}">
+  return `<tr class="${staged ? 'is-removed' : ''}">
     <td class="offer-cell" data-label="Оффер">
       <div class="offer-cell__main">
         <span class="offer-cell__name">${esc(offer.name)}</span>
@@ -261,6 +289,7 @@ function render() {
   html += campaign.streams.map(renderStream).join('');
   $('e-body').innerHTML = html;
   wireStreamActions();
+  showEditorLevel(true);
 }
 
 async function runAction(button, action, okText, kind, onError) {
@@ -272,9 +301,7 @@ async function runAction(button, action, okText, kind, onError) {
     setStatus(okText, kind);
     toast(okText, true);
   } catch (error) {
-    show($('e-msg'), error.message, false);
-    setStatus(error.message, 'err');
-    toast(error.message, false);
+    reportError(error.message);
     if (onError) onError();
     else setBusy(button, false);
   }
@@ -379,10 +406,7 @@ function wireStreamActions() {
     makeCombo(
       input,
       offerFetcher(input.dataset.combo),
-      (item) => {
-        input.value = `${item.name} (#${item.id})`;
-        input.dataset.selectedId = item.id;
-      },
+      (item) => setComboSelection(input, item),
       'Ищу офферы…',
     );
   });
@@ -391,8 +415,7 @@ function wireStreamActions() {
 function addFromCombo(button) {
   const streamId = button.dataset.add;
   const input = $('e-body').querySelector(`[data-combo="${streamId}"]`);
-  const typed = input.value.trim();
-  const offerId = input.dataset.selectedId || (/^\d+$/.test(typed) ? typed : '');
+  const offerId = comboId(input);
   if (!offerId) {
     show($('e-msg'), 'Выберите оффер из списка или введите его ID', false);
     return;
@@ -402,186 +425,6 @@ function addFromCombo(button) {
 
 function comboStream(streamId) {
   return state.currentCampaign.streams.find((stream) => String(stream.id) === String(streamId));
-}
-
-function appendHighlighted(item, name, needle) {
-  const index = needle ? name.toLowerCase().indexOf(needle) : -1;
-  if (index < 0) {
-    item.append(document.createTextNode(name));
-    return;
-  }
-  item.append(document.createTextNode(name.slice(0, index)));
-  const mark = document.createElement('mark');
-  mark.textContent = name.slice(index, index + needle.length);
-  item.append(mark, document.createTextNode(name.slice(index + needle.length)));
-}
-
-function closeCombo(ui) {
-  ui.list.hidden = true;
-  ui.input.setAttribute('aria-expanded', 'false');
-  ui.input.removeAttribute('aria-activedescendant');
-  ui.active = -1;
-}
-
-function renderComboOptions(ui, items) {
-  ui.items = items;
-  ui.list.innerHTML = '';
-  if (!items.length) {
-    const item = document.createElement('li');
-    item.className = 'combo-empty';
-    item.setAttribute('role', 'option');
-    item.setAttribute('aria-disabled', 'true');
-    item.textContent = 'Ничего не найдено';
-    ui.list.append(item);
-  }
-  const needle = ui.query.trim().toLowerCase();
-  for (const entry of items) {
-    const item = document.createElement('li');
-    item.setAttribute('role', 'option');
-    item.setAttribute('aria-selected', 'false');
-    item.id = `${ui.list.id}-opt-${entry.id}`;
-    item.dataset.offerId = entry.id;
-    const nameSpan = document.createElement('span');
-    nameSpan.className = 'combo-list__name';
-    appendHighlighted(nameSpan, entry.name, needle);
-    item.append(nameSpan);
-    if (/^\d+$/.test(String(entry.id))) {
-      const idSpan = document.createElement('span');
-      idSpan.className = 'muted mono';
-      idSpan.textContent = `#${entry.id}`;
-      item.append(idSpan);
-    }
-    item.onmousedown = (event) => {
-      event.preventDefault();
-      selectComboOption(ui, entry);
-    };
-    ui.list.append(item);
-  }
-  ui.list.hidden = document.activeElement !== ui.input;
-  ui.input.setAttribute('aria-expanded', String(!ui.list.hidden));
-  ui.active = -1;
-  positionCombo(ui);
-}
-
-function positionCombo(ui) {
-  if (ui.list.hidden) return;
-  ui.list.classList.remove('combo-list--up');
-  const listRect = ui.list.getBoundingClientRect();
-  const inputRect = ui.input.getBoundingClientRect();
-  const barSpace = 56;
-  if (
-    listRect.bottom > window.innerHeight - barSpace &&
-    inputRect.top > listRect.height + barSpace
-  ) {
-    ui.list.classList.add('combo-list--up');
-  }
-}
-
-function renderComboState(ui, message, kind = 'loading') {
-  ui.items = [];
-  ui.active = -1;
-  ui.list.innerHTML = '';
-  const item = document.createElement('li');
-  item.className = `combo-state combo-state--${kind}`;
-  item.setAttribute('role', 'option');
-  item.setAttribute('aria-disabled', 'true');
-  if (kind === 'loading') {
-    const spinner = document.createElement('span');
-    spinner.className = 'spinner spinner--xs';
-    spinner.setAttribute('aria-hidden', 'true');
-    item.append(spinner);
-  }
-  item.append(document.createTextNode(message));
-  ui.list.append(item);
-  ui.list.hidden = document.activeElement !== ui.input;
-  ui.input.setAttribute('aria-expanded', String(!ui.list.hidden));
-  positionCombo(ui);
-}
-
-async function refreshCombo(ui) {
-  const requestId = ++ui.requestId;
-  if (document.activeElement === ui.input) renderComboState(ui, ui.loadingLabel);
-  ui.input.setAttribute('aria-busy', 'true');
-  let rows;
-  try {
-    rows = await ui.fetchItems(ui.query);
-  } catch (error) {
-    if (ui.requestId === requestId) {
-      renderComboState(ui, `Не удалось загрузить: ${error.message}`, 'error');
-      logEvent('err', `Не удалось загрузить список: ${error.message}`);
-    }
-    return;
-  } finally {
-    if (ui.requestId === requestId) ui.input.removeAttribute('aria-busy');
-  }
-  if (ui.requestId !== requestId) return;
-  renderComboOptions(ui, rows);
-}
-
-function selectComboOption(ui, item) {
-  ui.onSelect(item);
-  closeCombo(ui);
-}
-
-function moveComboActive(ui, delta) {
-  const options = [...ui.list.querySelectorAll('li[data-offer-id]')];
-  if (!options.length) return;
-  ui.active = (ui.active + delta + options.length) % options.length;
-  options.forEach((item, index) => {
-    item.classList.toggle('active', index === ui.active);
-    item.setAttribute('aria-selected', String(index === ui.active));
-  });
-  ui.input.setAttribute('aria-activedescendant', options[ui.active].id);
-  options[ui.active].scrollIntoView({ block: 'nearest' });
-}
-
-function suggestsOnText(input) {
-  return !input.dataset.selectedId && Boolean(input.value.trim());
-}
-
-function makeCombo(input, fetchItems, onSelect, loadingLabel = 'Ищу…') {
-  const ui = {
-    input,
-    list: $(input.getAttribute('aria-controls')),
-    query: '',
-    items: [],
-    active: -1,
-    timer: 0,
-    requestId: 0,
-    loadingLabel,
-    fetchItems,
-    onSelect,
-  };
-  input.onfocus = () => {
-    ui.query = input.value;
-    if (suggestsOnText(input)) refreshCombo(ui);
-    else closeCombo(ui);
-  };
-  input.oninput = () => {
-    ui.query = input.value;
-    ui.requestId += 1;
-    input.dataset.selectedId = '';
-    clearTimeout(ui.timer);
-    if (!input.value.trim()) {
-      closeCombo(ui);
-      return;
-    }
-    ui.timer = setTimeout(() => refreshCombo(ui), COMBO_DEBOUNCE_MS);
-  };
-  input.onkeydown = (event) => {
-    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-      event.preventDefault();
-      if (ui.list.hidden) {
-        if (suggestsOnText(input)) refreshCombo(ui);
-      } else moveComboActive(ui, event.key === 'ArrowDown' ? 1 : -1);
-    } else if (event.key === 'Enter') {
-      event.preventDefault();
-      if (!ui.list.hidden && ui.active >= 0) selectComboOption(ui, ui.items[ui.active]);
-    } else if (event.key === 'Escape' || event.key === 'Tab') {
-      closeCombo(ui);
-    }
-  };
-  input.onblur = () => closeCombo(ui);
 }
 
 let countryItems = null;
@@ -646,6 +489,7 @@ function switchTab(name, focus = false) {
   const createActive = name === 'create';
   $('view-create').classList.toggle('hidden', !createActive);
   $('view-edit').classList.toggle('hidden', createActive);
+  if (!createActive) showEditorLevel(Boolean(state.currentCampaign));
   for (const tab of [$('tab-create'), $('tab-edit')]) {
     const active = tab.id === (createActive ? 'tab-create' : 'tab-edit');
     tab.classList.toggle('is-active', active);
@@ -669,9 +513,7 @@ tabs.forEach((tab, index) => {
 $('create-form').onsubmit = async (event) => {
   event.preventDefault();
   const button = event.target.querySelector('button[type="submit"]');
-  const typedOffer = $('c-offer').value.trim();
-  const offerId =
-    $('c-offer').dataset.selectedId || (/^\d+$/.test(typedOffer) ? typedOffer : '');
+  const offerId = comboId($('c-offer'));
   if (!offerId) {
     show($('c-msg'), 'Выберите оффер из списка или введите его ID', false);
     return;
@@ -688,8 +530,7 @@ $('create-form').onsubmit = async (event) => {
     show($('c-msg'), `Создана кампания #${campaign.id} «${campaign.name}» — откройте её в редакторе`, true);
     toast(`Кампания #${campaign.id} создана`, true);
     setStatus(`Кампания #${campaign.id} «${campaign.name}» создана`, 'ok');
-    $('e-id').value = campaign.id;
-    $('e-id').dataset.selectedId = String(campaign.id);
+    setComboSelection($('e-id'), campaign);
   } catch (error) {
     show($('c-msg'), error.message, false);
     toast(error.message, false);
@@ -727,11 +568,22 @@ makeCombo(
   $('e-id'),
   (query) => api(`/api/campaigns/search?q=${encodeURIComponent(query)}&limit=${COMBO_LIMIT}`),
   (item) => {
-    $('e-id').value = `${item.name} (#${item.id})`;
-    $('e-id').dataset.selectedId = String(item.id);
-    loadCampaign(String(item.id));
+    setComboSelection($('e-id'), item);
+    if ($('e-autofetch').checked) {
+      loadCampaign(String(item.id));
+      return;
+    }
+    clearEditor();
+    setStatus(`Кампания #${item.id} выбрана — нажмите «Загрузить потоки»`, 'warn');
   },
   'Ищу кампании…',
 );
+
+$('e-crumb-root').onclick = () => {
+  clearEditor();
+  $('e-id').value = '';
+  delete $('e-id').dataset.selectedId;
+  $('e-id').focus();
+};
 
 init();

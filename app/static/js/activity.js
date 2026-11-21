@@ -29,6 +29,10 @@ function timeText(date, withSeconds = false) {
   });
 }
 
+function scrollToBottom(list) {
+  list.scrollTop = list.scrollHeight;
+}
+
 function setText(node, value) {
   if (node && node.textContent !== value) node.textContent = value;
 }
@@ -144,7 +148,7 @@ function renderEvents() {
     return;
   }
   for (const event of state.events) list.append(createEventItem(event));
-  list.scrollTop = list.scrollHeight;
+  scrollToBottom(list);
 }
 
 function appendEvent(event) {
@@ -152,7 +156,7 @@ function appendEvent(event) {
   if (!list) return;
   if (!list.querySelector('.activity__event')) list.innerHTML = '';
   list.append(createEventItem(event));
-  list.scrollTop = list.scrollHeight;
+  scrollToBottom(list);
 }
 
 function renderBadge() {
@@ -210,7 +214,7 @@ function setOpen(open) {
   if (!open) return;
   renderRunning();
   const list = byId('activity-events');
-  if (list) list.scrollTop = list.scrollHeight;
+  if (list) scrollToBottom(list);
 }
 
 export function beginOperation(label) {
