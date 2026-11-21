@@ -15,8 +15,8 @@
             "title": "Domain Id"
           },
           "geo": {
-            "description": "ISO country code, e.g. US",
-            "maxLength": 2,
+            "description": "ISO country codes, comma-separated, e.g. US or MX,AU,RO",
+            "maxLength": 64,
             "minLength": 2,
             "title": "Geo",
             "type": "string"
@@ -1170,6 +1170,32 @@
         "summary": "Push Stream",
         "tags": [
           "editor"
+        ]
+      }
+    },
+    "/api/countries": {
+      "get": {
+        "description": "ISO 3166-1 alpha-2 codes accepted by the creator geo field.",
+        "operationId": "countries_api_countries_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "title": "Response Countries Api Countries Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Countries",
+        "tags": [
+          "creator"
         ]
       }
     },

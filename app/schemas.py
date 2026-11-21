@@ -10,7 +10,9 @@ from .countries import ISO_ALPHA2
 class CampaignCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     geo: str = Field(
-        min_length=2, max_length=2, description="ISO country code, e.g. US"
+        min_length=2,
+        max_length=64,
+        description="ISO country codes, comma-separated, e.g. US or MX,AU,RO",
     )
     offer_id: int = Field(gt=0)
     # Optional overrides; the first dictionary entry is used by default
@@ -21,12 +23,20 @@ class CampaignCreate(BaseModel):
     @field_validator("geo")
     @classmethod
     def upper_geo(cls, v: str) -> str:
-        v = v.strip().upper()
-        if not v.isalpha():
-            raise ValueError("geo должен состоять из двух букв")
-        if v not in ISO_ALPHA2:
-            raise ValueError("неизвестный код страны ISO-3166")
-        return v
+        codes: list[str] = []
+        for part in v.split(","):
+            code = part.strip().upper()
+            if not code:
+                continue
+            if len(code) != 2 or not code.isalpha():
+                raise ValueError("каждый код страны — ровно две буквы")
+            if code not in ISO_ALPHA2:
+                raise ValueError("неизвестный код страны ISO-3166")
+            if code not in codes:
+                codes.append(code)
+        if not codes:
+            raise ValueError("укажите хотя бы один код страны")
+        return ",".join(codes)
 
 
 class OfferAdd(BaseModel):

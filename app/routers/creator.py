@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..cache import TtlCache
 from ..config import settings
+from ..countries import ISO_ALPHA2
 from ..db import get_db
 from ..keitaro import LANDINGS_SCHEMA, KeitaroClient, ensure_offer_exists, get_client
 from ..models import CampaignRecord
@@ -55,7 +56,7 @@ async def _create_campaign_with_retry(k: KeitaroClient, payload: dict[str, Any])
 
 
 def _geo_stream_payload(campaign_id: int, geo: str) -> dict[str, Any]:
-    """Stream that redirects visitors from the target country to Google."""
+    """Stream that redirects visitors from the target countries to Google."""
     return {
         "campaign_id": campaign_id,
         "name": f"{geo} -> Google",
@@ -68,7 +69,7 @@ def _geo_stream_payload(campaign_id: int, geo: str) -> dict[str, Any]:
         "action_type": "http",
         "action_payload": settings.google_url,
         "filter_or": False,
-        "filters": [{"name": "country", "mode": "accept", "payload": [geo]}],
+        "filters": [{"name": "country", "mode": "accept", "payload": geo.split(",")}],
     }
 
 
@@ -113,6 +114,12 @@ async def dictionaries(k: Tracker) -> Dictionaries:
     Cached per-process for `dictionaries_ttl` seconds; see README "Scaling & state".
     """
     return await _load_dictionaries(k)
+
+
+@router.get("/countries")
+async def countries() -> list[str]:
+    """ISO 3166-1 alpha-2 codes accepted by the creator geo field."""
+    return sorted(ISO_ALPHA2)
 
 
 @router.get("/offers/search")

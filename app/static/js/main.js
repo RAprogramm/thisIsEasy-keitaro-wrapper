@@ -32,9 +32,6 @@ async function init() {
     logEvent('err', `Не удалось загрузить справочники: ${error.message}`);
     return;
   }
-  fill($('c-domain'), state.dict.domains, true);
-  fill($('c-group'), state.dict.groups, true);
-  fill($('c-source'), state.dict.sources, true);
   makeCombo(
     $('c-offer'),
     (query) => api(`/api/offers/search?q=${encodeURIComponent(query)}&limit=${COMBO_LIMIT}`),
@@ -44,6 +41,7 @@ async function init() {
     },
     'Ищу офферы…',
   );
+  makeGeoCombo();
 }
 
 function campaignSkeleton() {
@@ -571,6 +569,34 @@ function makeCombo(input, fetchItems, onSelect, loadingLabel = 'Ищу…') {
   input.onblur = () => closeCombo(ui);
 }
 
+let countryItems = null;
+
+async function countryFetcher(query) {
+  if (!countryItems) {
+    const codes = await api('/api/countries');
+    const names = new Intl.DisplayNames(['ru'], { type: 'region' });
+    countryItems = codes.map((code) => ({ id: code, name: `${code} — ${names.of(code) ?? code}` }));
+  }
+  const seg = query.split(',').pop().trim().toLowerCase();
+  const matched = !seg
+    ? countryItems
+    : countryItems.filter((c) => c.name.toLowerCase().includes(seg));
+  return matched.slice(0, COMBO_LIMIT);
+}
+
+function makeGeoCombo() {
+  makeCombo(
+    $('c-geo'),
+    countryFetcher,
+    (item) => {
+      const parts = $('c-geo').value.split(',');
+      parts.pop();
+      $('c-geo').value = `${[...parts, item.id].join(',')},`;
+    },
+    'Ищу страну…',
+  );
+}
+
 function offerFetcher(streamId) {
   return async (query) => {
     const rows = await api(`/api/offers/search?q=${encodeURIComponent(query)}&limit=${COMBO_LIMIT}`);
@@ -633,9 +659,6 @@ $('create-form').onsubmit = async (event) => {
     name: $('c-name').value.trim(),
     geo: $('c-geo').value.trim().toUpperCase(),
     offer_id: Number(offerId),
-    domain_id: $('c-domain').value ? Number($('c-domain').value) : null,
-    group_id: $('c-group').value ? Number($('c-group').value) : null,
-    source_id: $('c-source').value ? Number($('c-source').value) : null,
   };
   logAction(`Создание кампании «${body.name}»`);
   setBusy(button, true);

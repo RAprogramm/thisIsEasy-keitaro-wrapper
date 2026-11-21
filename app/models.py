@@ -41,7 +41,7 @@ class CampaignRecord(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     keitaro_id: Mapped[int] = mapped_column(Integer, unique=True, index=True)
     name: Mapped[str] = mapped_column(String(255))
-    geo: Mapped[str] = mapped_column(String(2))
+    geo: Mapped[str] = mapped_column(String(64))
     offer_id: Mapped[int] = mapped_column(Integer)
     domain_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     group_id: Mapped[int | None] = mapped_column(Integer, nullable=True)

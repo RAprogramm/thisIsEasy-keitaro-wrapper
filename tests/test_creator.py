@@ -84,6 +84,36 @@ def test_create_builds_two_streams(client: TestClient, fake: FakeKeitaro) -> Non
     ]
 
 
+def test_create_accepts_comma_separated_geos(
+    client: TestClient, fake: FakeKeitaro
+) -> None:
+    r = client.post(
+        "/api/campaigns", json={"name": "c1", "geo": "mx, au ,ro", "offer_id": 100}
+    )
+    assert r.status_code == 201
+    assert r.json()["name"] == "c1"
+    streams = [c[1]["payload"] for c in fake.calls if c[0] == "create_stream"]
+    assert streams[0]["filters"] == [
+        {"name": "country", "mode": "accept", "payload": ["MX", "AU", "RO"]}
+    ]
+
+
+def test_create_rejects_bad_geo_codes(client: TestClient) -> None:
+    for bad in ("USA", "XX", "1,2", ",,"):
+        r = client.post(
+            "/api/campaigns", json={"name": "c", "geo": bad, "offer_id": 100}
+        )
+        assert r.status_code == 422, bad
+
+
+def test_countries_endpoint_lists_codes(client: TestClient) -> None:
+    r = client.get("/api/countries")
+    assert r.status_code == 200
+    codes = r.json()
+    assert "AU" in codes and "DE" in codes
+    assert codes == sorted(codes)
+
+
 def test_create_sends_the_name_verbatim(client: TestClient) -> None:
     r = client.post(
         "/api/campaigns",

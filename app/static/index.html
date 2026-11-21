@@ -77,10 +77,17 @@
             <label for="c-geo">Гео</label>
             <span class="hint-wrap">
               <button class="hint" type="button" aria-describedby="hint-c-geo" aria-label="Пояснение к коду страны">?</button>
-              <span class="hint__bubble" id="hint-c-geo" role="tooltip">Две буквы ISO-3166, регистр не важен.</span>
+              <span class="hint__bubble" id="hint-c-geo" role="tooltip">Коды ISO-3166 через запятую, например MX,AU,RO. Регистр не важен.</span>
             </span>
           </div>
-          <input id="c-geo" required maxlength="2" placeholder="US" autocomplete="off" autocapitalize="characters">
+          <div class="combo">
+            <svg class="icon combo__icon" aria-hidden="true"><use href="#i-search"/></svg>
+            <input id="c-geo" type="text" class="combo-input" required maxlength="64"
+              placeholder="MX,AU,RO" spellcheck="false" autocomplete="off" autocapitalize="characters"
+              role="combobox" aria-expanded="false" aria-autocomplete="list"
+              aria-controls="combo-list-geo">
+            <ul class="combo-list" id="combo-list-geo" role="listbox" hidden></ul>
+          </div>
         </div>
         <div class="field field--span-4">
           <div class="field__label">
@@ -97,18 +104,6 @@
               aria-autocomplete="list" aria-controls="combo-list-offer">
             <ul class="combo-list" id="combo-list-offer" role="listbox" hidden></ul>
           </div>
-        </div>
-        <div class="field field--span-4">
-          <label for="c-domain">Домен</label>
-          <select id="c-domain"></select>
-        </div>
-        <div class="field field--span-4">
-          <label for="c-group">Группа</label>
-          <select id="c-group"></select>
-        </div>
-        <div class="field field--span-4">
-          <label for="c-source">Источник</label>
-          <select id="c-source"></select>
         </div>
       </div>
       <div class="form__actions">
