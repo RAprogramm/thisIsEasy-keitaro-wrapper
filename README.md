@@ -256,6 +256,8 @@ took part:
 
 - **Qwen3.8 Flash Next**
 - **MiMo-V2.6-Flash**
+- **Claude Sonnet 5.5**
+- **Beam**
 
 The author reviewed every change and verified the result against the live Keitaro test
 tracker: campaign creation, stream inspection, editor guards and partial stream updates.
