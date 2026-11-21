@@ -12,6 +12,7 @@ from ..cache import TtlCache
 from ..config import settings
 from ..countries import ISO_ALPHA2
 from ..db import get_db
+from ..errors import AppError, UpstreamError
 from ..keitaro import LANDINGS_SCHEMA, KeitaroClient, ensure_offer_exists, get_client
 from ..models import CampaignRecord
 from ..schemas import (
@@ -50,25 +51,32 @@ async def _create_campaign_with_retry(k: KeitaroClient, payload: dict[str, Any])
         remaining -= 1
         try:
             return await k.create_campaign({**payload, "alias": secrets.token_hex(6)})
-        except HTTPException as e:
+        except UpstreamError as e:
             if remaining == 0 or "alias" not in str(e.detail).lower():
                 raise
+
+
+def _stream_base(campaign_id: int, name: str, position: int) -> dict[str, Any]:
+    """Fields shared by every stream the creator builds."""
+    return {
+        "campaign_id": campaign_id,
+        "name": name,
+        "type": "regular",
+        "position": position,
+        "weight": 100,
+        "state": "active",
+        "collect_clicks": True,
+        "filter_or": False,
+    }
 
 
 def _geo_stream_payload(campaign_id: int, geo: str) -> dict[str, Any]:
     """Stream that redirects visitors from the target countries to Google."""
     return {
-        "campaign_id": campaign_id,
-        "name": f"{geo} -> Google",
-        "type": "regular",
-        "position": 1,
-        "weight": 100,
-        "state": "active",
-        "collect_clicks": True,
+        **_stream_base(campaign_id, f"{geo} -> Google", 1),
         "schema": "redirect",
         "action_type": "http",
         "action_payload": settings.google_url,
-        "filter_or": False,
         "filters": [{"name": "country", "mode": "accept", "payload": geo.split(",")}],
     }
 
@@ -76,19 +84,22 @@ def _geo_stream_payload(campaign_id: int, geo: str) -> dict[str, Any]:
 def _offer_stream_payload(campaign_id: int, offer_id: int) -> dict[str, Any]:
     """Catch-all stream that serves the chosen offer to everyone else."""
     return {
-        "campaign_id": campaign_id,
-        "name": "Offer",
-        "type": "regular",
-        "position": 2,
-        "weight": 100,
-        "state": "active",
-        "collect_clicks": True,
+        **_stream_base(campaign_id, "Offer", 2),
         "schema": LANDINGS_SCHEMA,
         "action_type": "http",
-        "filter_or": False,
         "filters": [],
         "offers": [{"offer_id": offer_id, "share": 100, "state": "active"}],
     }
+
+
+async def _discard_campaign(k: KeitaroClient, cid: int) -> None:
+    """Best-effort delete of a campaign that cannot be finished locally."""
+    try:
+        await k.delete_campaign(cid)
+    except Exception as cleanup_error:
+        logger.warning(
+            "campaign %s created in Keitaro but cleanup failed: %s", cid, cleanup_error
+        )
 
 
 async def _load_dictionaries(k: KeitaroClient) -> Dictionaries:
@@ -184,15 +195,8 @@ async def create_campaign(
         await k.create_stream(_offer_stream_payload(cid, body.offer_id))
     except Exception as stream_error:
         logger.warning("stream creation failed for campaign %s: %s", cid, stream_error)
-        try:
-            await k.delete_campaign(cid)
-        except Exception as cleanup_error:
-            logger.warning(
-                "campaign %s created in Keitaro but cleanup failed: %s",
-                cid,
-                cleanup_error,
-            )
-        if isinstance(stream_error, HTTPException):
+        await _discard_campaign(k, cid)
+        if isinstance(stream_error, AppError):
             raise
         raise HTTPException(
             502, f"Keitaro: {stream_error}"
@@ -213,14 +217,7 @@ async def create_campaign(
         await db.commit()
     except Exception as db_error:
         logger.exception("failed to persist campaign %s", cid)
-        try:
-            await k.delete_campaign(cid)
-        except Exception as cleanup_error:
-            logger.warning(
-                "campaign %s created in Keitaro but cleanup failed: %s",
-                cid,
-                cleanup_error,
-            )
+        await _discard_campaign(k, cid)
         raise HTTPException(500, "Failed to persist campaign") from db_error
     logger.info("created campaign %s (geo=%s, offer=%s)", cid, body.geo, body.offer_id)
     return CampaignCreated(

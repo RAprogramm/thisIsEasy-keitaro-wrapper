@@ -62,7 +62,7 @@ def test_rate_limit_returns_429(
 
     monkeypatch.setattr(settings, "rate_limit_per_minute", 1)
     # reset bucket
-    from app.main import _rate_limit_state
+    from app.middleware import _rate_limit_state
 
     _rate_limit_state.clear()
     r1 = client.post("/api/campaigns", json={"name": "c", "geo": "US", "offer_id": 100})
@@ -76,7 +76,7 @@ def test_rate_limit_evicts_stale_buckets(
     monkeypatch: pytest.MonkeyPatch, client: TestClient
 ) -> None:
     from app.config import settings
-    from app.main import _rate_limit_state
+    from app.middleware import _rate_limit_state
 
     monkeypatch.setattr(settings, "rate_limit_per_minute", 1000)
     _rate_limit_state.clear()

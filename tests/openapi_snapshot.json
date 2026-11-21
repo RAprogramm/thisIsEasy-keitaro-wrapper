@@ -790,7 +790,7 @@
     },
     "/api/campaigns/{campaign_id}/cancel": {
       "post": {
-        "description": "Discard staged changes: additions vanish, removals revert to published.",
+        "description": "Discard staged changes: additions vanish, removals revert to published.\n\nAn offer that was staged for removal but never published to Keitaro was\nitself an unpublished addition, so cancelling drops it from the database\nentirely, exactly like a plain staged addition.",
         "operationId": "cancel_stream_api_campaigns__campaign_id__cancel_post",
         "parameters": [
           {
@@ -902,7 +902,7 @@
     },
     "/api/campaigns/{campaign_id}/offers/{offer_id}": {
       "delete": {
-        "description": "Stage an offer removal: share 0, others rebalanced, archived on push.",
+        "description": "Stage an offer removal: share 0, others rebalanced, archived on push.\n\nAny tracked offer can be removed, staged additions included: the row always\nstays visible and dimmed with a restore action, exactly like the demo.",
         "operationId": "remove_offer_api_campaigns__campaign_id__offers__offer_id__delete",
         "parameters": [
           {
@@ -1048,7 +1048,7 @@
     },
     "/api/campaigns/{campaign_id}/offers/{offer_id}/restore": {
       "post": {
-        "description": "Bring an archived offer back; a staged removal is simply undone.",
+        "description": "Bring an archived offer back; a staged removal is simply undone.\n\nUndoing a staged removal returns the offer to whatever it was before:\npublished offers become active again, never-published ones go back to\nbeing a staged addition.",
         "operationId": "restore_offer_api_campaigns__campaign_id__offers__offer_id__restore_post",
         "parameters": [
           {

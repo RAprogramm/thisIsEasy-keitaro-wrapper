@@ -2,13 +2,13 @@
 
 from typing import Any
 
-from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.editor_service import rebalance
+from app.errors import UpstreamError
 from app.models import CampaignRecord, OfferChange, StreamOffer
+from app.shares import rebalance
 from tests.conftest import FakeKeitaro, make_offer_stream
 
 
@@ -138,7 +138,7 @@ def test_get_campaign_surfaces_stats_error(
     client: TestClient, fake: FakeKeitaro
 ) -> None:
     seed_campaign(fake)
-    fake.report_error = HTTPException(500, "report down")
+    fake.report_error = UpstreamError("report down", 500)
     body = client.get("/api/campaigns/1000").json()
     assert "report down" in body["stats_error"]
 
@@ -214,16 +214,38 @@ def test_remove_offer_marks_pending(client: TestClient, fake: FakeKeitaro) -> No
     assert body["streams"][1]["dirty"] is True
 
 
-def test_remove_last_offer_is_blocked(client: TestClient, fake: FakeKeitaro) -> None:
+def test_remove_last_offer_stages_removal(
+    client: TestClient, fake: FakeKeitaro
+) -> None:
     seed_campaign(fake)
-    r = client.delete("/api/campaigns/1000/offers/100")
-    assert r.status_code == 400
+    body = client.delete("/api/campaigns/1000/offers/100").json()
+    offers = body["streams"][1]["offers"]
+    removed = next(o for o in offers if o["offer_id"] == 100)
+    assert removed["status"] == "pending_remove"
+    assert removed["share"] == 0
+    assert body["streams"][1]["dirty"] is True
+    restored = client.post("/api/campaigns/1000/offers/100/restore").json()
+    back = next(o for o in restored["streams"][1]["offers"] if o["offer_id"] == 100)
+    assert back["status"] == "active"
+    assert back["share"] == 100
 
 
 def test_remove_unknown_offer(client: TestClient, fake: FakeKeitaro) -> None:
     seed_campaign(fake)
     r = client.delete("/api/campaigns/1000/offers/200")
     assert r.status_code == 404
+
+
+def test_remove_archived_offer_is_404(client: TestClient, fake: FakeKeitaro) -> None:
+    seed_campaign(fake)
+    fake.streams[1000][1]["offers"].append(
+        {"offer_id": 200, "share": 0, "state": "active"}
+    )
+    client.delete("/api/campaigns/1000/offers/200")
+    client.post("/api/campaigns/1000/push?stream_id=2")
+    r = client.delete("/api/campaigns/1000/offers/200")
+    assert r.status_code == 404
+    assert r.json()["detail"] == "Оффера нет в потоке"
 
 
 def test_push_publishes_pending(client: TestClient, fake: FakeKeitaro) -> None:
@@ -481,7 +503,7 @@ def test_removal_allowed_when_pins_fill_100(
     client.post("/api/campaigns/1000/offers/200/pin?stream_id=2&pinned=true")
     client.post("/api/campaigns/1000/offers", json={"offer_id": 300})
     body = client.delete("/api/campaigns/1000/offers/300?stream_id=2").json()
-    assert shares_of(body) == {100: 50, 200: 50}
+    assert shares_of(body) == {100: 50, 200: 50, 300: 0}
 
 
 def test_removing_pending_add_leaving_pinned_shares_is_rejected(
@@ -639,11 +661,53 @@ def test_add_restores_archived_offer(client: TestClient, fake: FakeKeitaro) -> N
     assert restored["status"] == "pending_add"
 
 
-def test_remove_pending_add_deletes_it(client: TestClient, fake: FakeKeitaro) -> None:
+def test_remove_pending_add_dims_it_instead_of_deleting(
+    client: TestClient, fake: FakeKeitaro
+) -> None:
     seed_campaign(fake)
     client.post("/api/campaigns/1000/offers", json={"offer_id": 200})
     body = client.delete("/api/campaigns/1000/offers/200").json()
+    offers = body["streams"][1]["offers"]
+    target = next(o for o in offers if o["offer_id"] == 200)
+    assert target["status"] == "pending_remove"
+    assert target["share"] == 0
+    assert body["streams"][1]["dirty"] is True
+
+
+def test_restore_never_published_removal_returns_to_pending_add(
+    client: TestClient, fake: FakeKeitaro
+) -> None:
+    seed_campaign(fake)
+    client.post("/api/campaigns/1000/offers", json={"offer_id": 200})
+    client.delete("/api/campaigns/1000/offers/200")
+    body = client.post("/api/campaigns/1000/offers/200/restore").json()
+    target = next(o for o in body["streams"][1]["offers"] if o["offer_id"] == 200)
+    assert target["status"] == "pending_add"
+    assert target["share"] == 50
+
+
+def test_cancel_drops_never_published_removal(
+    client: TestClient, fake: FakeKeitaro
+) -> None:
+    seed_campaign(fake)
+    client.post("/api/campaigns/1000/offers", json={"offer_id": 200})
+    client.delete("/api/campaigns/1000/offers/200")
+    body = client.post("/api/campaigns/1000/cancel?stream_id=2").json()
     ids = [o["offer_id"] for o in body["streams"][1]["offers"]]
+    assert 200 not in ids
+    assert body["streams"][1]["dirty"] is False
+
+
+def test_push_archives_never_published_removal(
+    client: TestClient, fake: FakeKeitaro
+) -> None:
+    seed_campaign(fake)
+    client.post("/api/campaigns/1000/offers", json={"offer_id": 200})
+    client.delete("/api/campaigns/1000/offers/200")
+    body = client.post("/api/campaigns/1000/push?stream_id=2").json()
+    target = next(o for o in body["streams"][1]["offers"] if o["offer_id"] == 200)
+    assert target["status"] == "removed"
+    ids = [o["offer_id"] for o in fake.streams[1000][1]["offers"]]
     assert 200 not in ids
 
 
@@ -655,5 +719,5 @@ def test_remove_pending_add_returns_its_share_to_the_stream(
     assert [o["share"] for o in added["streams"][1]["offers"]] == [50, 50]
     body = client.delete("/api/campaigns/1000/offers/200").json()
     offers = body["streams"][1]["offers"]
-    assert [(o["offer_id"], o["share"]) for o in offers] == [(100, 100)]
-    assert body["streams"][1]["dirty"] is False
+    assert [(o["offer_id"], o["share"]) for o in offers] == [(100, 100), (200, 0)]
+    assert body["streams"][1]["dirty"] is True

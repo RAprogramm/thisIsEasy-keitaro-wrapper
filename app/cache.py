@@ -33,47 +33,56 @@ class TtlCache[T]:
         self._expires_at: float | None = None
         self._value: T | None = None
 
+    def _fresh_value(self, now: float) -> T | None:
+        """Return the cached value while present and within its TTL, else None."""
+        if self._expires_at is not None and now < self._expires_at:
+            return self._value
+        return None
+
+    def _store(self, value: T, now: float) -> None:
+        """Cache ``value`` together with the moment it was computed."""
+        self._value = value
+        self._expires_at = now + self._ttl
+
+    def _stale_fallback(self) -> T | None:
+        """Return the stale value when a failed factory leaves one behind."""
+        if self._value is not None:
+            logger.warning("cache factory failed; returning stale value")
+        return self._value
+
     def get_or_set(self, factory: Callable[[], T]) -> T:
         """Return the cached value or compute and store a fresh one."""
         now = self._clock()
-        if (
-            self._expires_at is not None
-            and now < self._expires_at
-            and self._value is not None
-        ):
-            return self._value
+        fresh = self._fresh_value(now)
+        if fresh is not None:
+            return fresh
         try:
             value = factory()
         except Exception:
-            if self._value is not None:
-                logger.warning("cache factory failed; returning stale value")
-                return self._value
+            stale = self._stale_fallback()
+            if stale is not None:
+                return stale
             raise
-        self._value = value
-        self._expires_at = now + self._ttl
+        self._store(value, now)
         return value
 
     async def aget_or_set(self, factory: Callable[[], Any]) -> T:
         """Async variant of ``get_or_set`` for coroutine factories."""
         now = self._clock()
-        if (
-            self._expires_at is not None
-            and now < self._expires_at
-            and self._value is not None
-        ):
-            return self._value
+        fresh = self._fresh_value(now)
+        if fresh is not None:
+            return fresh
         try:
             result = factory()
             if asyncio.iscoroutine(result):
                 result = await result
             value = cast(T, result)
         except Exception:
-            if self._value is not None:
-                logger.warning("cache factory failed; returning stale value")
-                return self._value
+            stale = self._stale_fallback()
+            if stale is not None:
+                return stale
             raise
-        self._value = value
-        self._expires_at = now + self._ttl
+        self._store(value, now)
         return value
 
     def clear(self) -> None:

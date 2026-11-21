@@ -8,27 +8,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..cache import TtlCache
 from ..db import get_db
-from ..editor_service import (
-    ACTIVE_STATUSES,
-    REMOVED_STATUSES,
-    build_campaign_view,
-    ensure_pin_allowed,
-    ensure_removal_keeps_shares,
-    ensure_shares_publishable,
-    is_dirty,
-    local_offers,
-    log_change,
-    offer_stream,
-    rebalance,
-    resolve_offer_stream,
-    stream_payload,
-    sync_stream,
-    unlog_change,
-)
+from ..journal import log_change, unlog_change
 from ..keitaro import KeitaroClient, ensure_offer_exists, get_client
 from ..models import OfferStatus, StreamOffer
 from ..schemas import CampaignView, DictItem, OfferAdd
 from ..search import search_items
+from ..shares import (
+    ACTIVE_STATUSES,
+    REMOVED_STATUSES,
+    ensure_pin_allowed,
+    ensure_removal_keeps_shares,
+    ensure_shares_publishable,
+    is_dirty,
+    rebalance,
+    stream_payload,
+)
+from ..sync import local_offers, offer_stream, resolve_offer_stream, sync_stream
+from ..views import build_campaign_view
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +34,14 @@ DbSession = Annotated[AsyncSession, Depends(get_db)]
 Tracker = Annotated[KeitaroClient, Depends(get_client)]
 
 _campaigns_cache: TtlCache[list[DictItem]] = TtlCache(ttl=5.0)
+
+
+def require_offer(rows: list[StreamOffer], offer_id: int) -> StreamOffer:
+    """Return the tracked row of an offer; 404 when the stream does not track it."""
+    target = next((r for r in rows if r.offer_id == offer_id), None)
+    if target is None:
+        raise HTTPException(404, "Оффер не найден в потоке")
+    return target
 
 
 @router.get("/search")
@@ -118,32 +122,23 @@ async def remove_offer(
     k: Tracker,
     stream_id: int | None = None,
 ) -> CampaignView:
-    """Stage an offer removal: share 0, others rebalanced, archived on push."""
+    """Stage an offer removal: share 0, others rebalanced, archived on push.
+
+    Any tracked offer can be removed, staged additions included: the row always
+    stays visible and dimmed with a restore action, exactly like the demo.
+    """
     _, rows = await resolve_offer_stream(db, k, campaign_id, stream_id)
-    target = next((r for r in rows if r.offer_id == offer_id), None)
-    if target is None or target.status == OfferStatus.REMOVED:
+    target = require_offer(rows, offer_id)
+    if target.status == OfferStatus.REMOVED:
         raise HTTPException(404, "Оффера нет в потоке")
-    if target.status == OfferStatus.PENDING_ADD:
-        ensure_removal_keeps_shares(rows, target)
-        await unlog_change(db, campaign_id, offer_id, "add")
-        remaining = [r for r in rows if r is not target]
-        rebalance(remaining)
-        await db.delete(target)
-        await db.commit()
-    else:
-        remaining_active = [
-            r for r in rows if r.status in ACTIVE_STATUSES and r is not target
-        ]
-        if not remaining_active:
-            raise HTTPException(400, "Нельзя удалить последний оффер потока")
-        ensure_removal_keeps_shares(rows, target)
-        target.status = OfferStatus.PENDING_REMOVE
-        target.share = 0
-        target.pinned = False
-        rebalance(rows)
-        await log_change(db, campaign_id, offer_id, "remove")
-        await db.commit()
-        logger.info("removed offer %s from campaign %s", offer_id, campaign_id)
+    ensure_removal_keeps_shares(rows, target)
+    target.status = OfferStatus.PENDING_REMOVE
+    target.share = 0
+    target.pinned = False
+    rebalance(rows)
+    await log_change(db, campaign_id, offer_id, "remove")
+    await db.commit()
+    logger.info("removed offer %s from campaign %s", offer_id, campaign_id)
     return await build_campaign_view(campaign_id, k, db)
 
 
@@ -155,13 +150,18 @@ async def restore_offer(
     k: Tracker,
     stream_id: int | None = None,
 ) -> CampaignView:
-    """Bring an archived offer back; a staged removal is simply undone."""
+    """Bring an archived offer back; a staged removal is simply undone.
+
+    Undoing a staged removal returns the offer to whatever it was before:
+    published offers become active again, never-published ones go back to
+    being a staged addition.
+    """
     _, rows = await resolve_offer_stream(db, k, campaign_id, stream_id)
-    target = next((r for r in rows if r.offer_id == offer_id), None)
-    if target is None:
-        raise HTTPException(404, "Оффер не найден в потоке")
+    target = require_offer(rows, offer_id)
     if target.status == OfferStatus.PENDING_REMOVE:
-        target.status = OfferStatus.ACTIVE
+        target.status = (
+            OfferStatus.ACTIVE if target.ever_published else OfferStatus.PENDING_ADD
+        )
         rebalance(rows)
         await unlog_change(db, campaign_id, offer_id, "remove")
         await db.commit()
@@ -192,8 +192,8 @@ async def pin_offer(
 ) -> CampaignView:
     """Pin or unpin an offer's share; pinned shares survive rebalancing."""
     _, rows = await resolve_offer_stream(db, k, campaign_id, stream_id)
-    target = next((r for r in rows if r.offer_id == offer_id), None)
-    if target is None or target.status in REMOVED_STATUSES:
+    target = require_offer(rows, offer_id)
+    if target.status in REMOVED_STATUSES:
         raise HTTPException(404, "Оффер не найден в потоке")
     ensure_pin_allowed(rows, target, pinned)
     target.pinned = pinned
@@ -224,6 +224,7 @@ async def push_stream(
     for r in rows:
         if r.status == OfferStatus.PENDING_ADD:
             r.status = OfferStatus.ACTIVE
+            r.ever_published = True
         elif r.status == OfferStatus.PENDING_REMOVE:
             r.status = OfferStatus.REMOVED
         r.published_share = r.share
@@ -240,7 +241,12 @@ async def cancel_stream(
     k: Tracker,
     stream_id: int | None = None,
 ) -> CampaignView:
-    """Discard staged changes: additions vanish, removals revert to published."""
+    """Discard staged changes: additions vanish, removals revert to published.
+
+    An offer that was staged for removal but never published to Keitaro was
+    itself an unpublished addition, so cancelling drops it from the database
+    entirely, exactly like a plain staged addition.
+    """
     stream = offer_stream(await k.campaign_streams(campaign_id), stream_id)
     sid = stream["id"]
     rows = await local_offers(db, campaign_id, sid)
@@ -250,9 +256,13 @@ async def cancel_stream(
             await db.delete(r)
         elif r.status == OfferStatus.PENDING_REMOVE:
             await unlog_change(db, campaign_id, r.offer_id, "remove")
-            r.status = OfferStatus.ACTIVE
-            r.share = r.published_share
-            r.pinned = r.published_pinned
+            if r.ever_published:
+                r.status = OfferStatus.ACTIVE
+                r.share = r.published_share
+                r.pinned = r.published_pinned
+            else:
+                await unlog_change(db, campaign_id, r.offer_id, "add")
+                await db.delete(r)
         else:
             r.share = r.published_share
             r.pinned = r.published_pinned

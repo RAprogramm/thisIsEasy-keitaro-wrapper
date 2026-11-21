@@ -8,7 +8,6 @@ os.environ.setdefault("TEST_DATABASE_URL", "postgresql+psycopg:///keitaro_test")
 os.environ.setdefault("KEITARO_API_KEY", "test-key")
 
 import pytest
-from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -17,6 +16,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app import models  # noqa: F401  (registers the tables on Base)
 from app.cache import TtlCache
 from app.db import Base, get_db
+from app.errors import UpstreamError
 from app.keitaro import get_client
 from app.main import app
 from app.routers import creator as creator_router
@@ -84,9 +84,9 @@ class FakeKeitaro:
         self.streams: dict[int, list[dict[str, Any]]] = {}
         self.report_rows: list[dict[str, Any]] = []
         self.report_error: Exception | None = None
-        self.create_campaign_failures: list[HTTPException] = []
+        self.create_campaign_failures: list[UpstreamError] = []
         self.create_stream_failures: list[Exception] = []
-        self.delete_campaign_failures: list[HTTPException] = []
+        self.delete_campaign_failures: list[UpstreamError] = []
         self.deleted_campaigns: list[int] = []
         self._next_id = 1000
 

@@ -29,6 +29,9 @@ class OfferStatus(StrEnum):
     REMOVED = "removed"
 
 
+STATUS_SQL_VALUES = ", ".join(f"'{status.value}'" for status in OfferStatus)
+
+
 class CampaignRecord(Base):
     """A campaign created through the creator."""
 
@@ -96,7 +99,7 @@ class StreamOffer(Base):
             name="uq_stream_offers_campaign_stream_offer",
         ),
         CheckConstraint(
-            "status IN ('active', 'pending_add', 'pending_remove', 'removed')",
+            f"status IN ({STATUS_SQL_VALUES})",
             name="ck_stream_offers_status",
         ),
         Index(
@@ -114,6 +117,7 @@ class StreamOffer(Base):
     pinned: Mapped[bool] = mapped_column(Boolean, default=False)
     published_share: Mapped[int] = mapped_column(Integer, default=0)
     published_pinned: Mapped[bool] = mapped_column(Boolean, default=False)
+    ever_published: Mapped[bool] = mapped_column(Boolean, default=False)
     status: Mapped[str] = mapped_column(String(16), default=OfferStatus.ACTIVE)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

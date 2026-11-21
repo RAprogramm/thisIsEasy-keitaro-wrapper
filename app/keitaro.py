@@ -8,9 +8,9 @@ from collections.abc import Callable
 from typing import Any, ClassVar, TypedDict, cast
 
 import httpx2
-from fastapi import HTTPException
 
 from .config import settings
+from .errors import DomainError, UpstreamError
 
 logger = logging.getLogger(__name__)
 
@@ -124,11 +124,11 @@ class KeitaroClient:
                 last_error = e
                 if attempt == self.MAX_ATTEMPTS:
                     logger.warning("Keitaro unreachable: %s %s: %s", method, path, e)
-                    raise HTTPException(502, f"Keitaro недоступен: {e}") from e
+                    raise UpstreamError(f"Keitaro недоступен: {e}") from e
                 await self._sleep_backoff(attempt, None)
                 continue
             if r.status_code in self.RETRYABLE_STATUSES:
-                last_error = HTTPException(r.status_code, self._error_detail(r))
+                last_error = UpstreamError(self._error_detail(r), r.status_code)
                 if attempt == self.MAX_ATTEMPTS:
                     logger.warning(
                         "Keitaro rejected %s %s with %d: %s",
@@ -137,7 +137,7 @@ class KeitaroClient:
                         r.status_code,
                         r.text[:200],
                     )
-                    raise HTTPException(r.status_code, self._error_detail(r))
+                    raise UpstreamError(self._error_detail(r), r.status_code)
                 retry_after = r.headers.get("Retry-After")
                 await self._sleep_backoff(attempt, retry_after)
                 continue
@@ -149,11 +149,9 @@ class KeitaroClient:
                     r.status_code,
                     r.text[:200],
                 )
-                raise HTTPException(r.status_code, self._error_detail(r))
+                raise UpstreamError(self._error_detail(r), r.status_code)
             return r.json() if r.content else None
-        raise HTTPException(
-            502, "Keitaro недоступен"
-        ) from last_error  # pragma: no cover
+        raise UpstreamError("Keitaro недоступен") from last_error  # pragma: no cover
 
     async def _sleep_backoff(self, attempt: int, retry_after: str | None) -> None:
         if retry_after is not None:
@@ -194,7 +192,7 @@ class KeitaroClient:
         """
         try:
             return cast(KeitaroOffer, await self._request("GET", f"/offers/{offer_id}"))
-        except HTTPException as e:
+        except UpstreamError as e:
             if e.status_code == 404:
                 return None
             raise
@@ -310,4 +308,4 @@ async def ensure_offer_exists(k: KeitaroClient, offer_id: int) -> None:
         offer_id: offer id referenced by the request body.
     """
     if await k.get_offer(offer_id) is None:
-        raise HTTPException(400, f"Оффер {offer_id} не найден в Keitaro")
+        raise DomainError(f"Оффер {offer_id} не найден в Keitaro")

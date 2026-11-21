@@ -1,7 +1,7 @@
 """Performance benchmarks for hot paths."""
 
-from app.editor_service import rebalance
 from app.models import StreamOffer
+from app.shares import rebalance
 
 
 def test_rebalance_benchmark(benchmark: object) -> None:

@@ -10,8 +10,8 @@ import logging
 import httpx2
 import pytest
 import respx
-from fastapi import HTTPException
 
+from app.errors import UpstreamError
 from app.keitaro import KeitaroClient, close_client, get_client
 
 BASE = "https://k.test/admin_api/v1"
@@ -82,7 +82,7 @@ async def test_get_offer_propagates_server_errors(
     httpx2_mock: respx.Router, kc: KeitaroClient
 ) -> None:
     httpx2_mock.get(f"{BASE}/offers/5").respond(403, json={"error": "forbidden"})
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(UpstreamError) as exc:
         await kc.get_offer(5)
     assert exc.value.status_code == 403
 
@@ -94,7 +94,7 @@ async def test_html_error_body_collapses_to_status(
     httpx2_mock.get(f"{BASE}/campaigns/9").respond(
         404, text="<html><body><center>nginx</center></body></html>"
     )
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(UpstreamError) as exc:
         await kc.get_campaign(9)
     assert exc.value.detail == "Keitaro: HTTP 404"
 
@@ -104,7 +104,7 @@ async def test_empty_error_body_collapses_to_status(
     httpx2_mock: respx.Router, kc: KeitaroClient
 ) -> None:
     httpx2_mock.get(f"{BASE}/campaigns/8").respond(403, text="")
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(UpstreamError) as exc:
         await kc.get_campaign(8)
     assert exc.value.detail == "Keitaro: HTTP 403"
 
@@ -122,7 +122,7 @@ async def test_http_error_is_passed_through(
     httpx2_mock: respx.Router, kc: KeitaroClient
 ) -> None:
     httpx2_mock.get(f"{BASE}/offers").respond(404, text="not found")
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(UpstreamError) as exc:
         await kc.offers()
     assert exc.value.status_code == 404
     assert "not found" in exc.value.detail
@@ -137,7 +137,7 @@ async def test_transport_error_becomes_502(
     httpx2_mock.get(f"{BASE}/groups").mock(side_effect=httpx2.ConnectError("boom"))
     with (
         caplog.at_level(logging.WARNING, logger="app.keitaro"),
-        pytest.raises(HTTPException) as exc,
+        pytest.raises(UpstreamError) as exc,
     ):
         await kc.groups()
     assert exc.value.status_code == 502
@@ -154,7 +154,7 @@ async def test_http_error_is_logged(
     httpx2_mock.get(f"{BASE}/offers").respond(404, text="not found")
     with (
         caplog.at_level(logging.WARNING, logger="app.keitaro"),
-        pytest.raises(HTTPException),
+        pytest.raises(UpstreamError),
     ):
         await kc.offers()
     assert "Keitaro rejected" in caplog.text
@@ -273,7 +273,7 @@ async def test_raises_after_max_attempts(
     httpx2_mock.get(f"{BASE}/groups").mock(
         return_value=respx.MockResponse(503, text="busy")
     )
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(UpstreamError) as exc:
         await kc.groups()
     assert exc.value.status_code == 503
     assert len(sleeps) == 1

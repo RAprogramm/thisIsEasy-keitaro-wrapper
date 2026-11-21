@@ -3,9 +3,9 @@
 import logging
 
 import pytest
-from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
+from app.errors import UpstreamError
 from tests.conftest import FakeKeitaro
 
 
@@ -158,7 +158,7 @@ def test_list_campaigns_validates_limit(client: TestClient) -> None:
 
 def test_alias_collision_is_retried(client: TestClient, fake: FakeKeitaro) -> None:
     fake.create_campaign_failures = [
-        HTTPException(400, "Keitaro: alias X already used")
+        UpstreamError("Keitaro: alias X already used", 400)
     ]
     r = client.post("/api/campaigns", json={"name": "c1", "geo": "US", "offer_id": 100})
     assert r.status_code == 201
@@ -166,14 +166,14 @@ def test_alias_collision_is_retried(client: TestClient, fake: FakeKeitaro) -> No
 
 
 def test_alias_retries_are_exhausted(client: TestClient, fake: FakeKeitaro) -> None:
-    fake.create_campaign_failures = [HTTPException(400, "alias X used")] * 3
+    fake.create_campaign_failures = [UpstreamError("alias X used", 400)] * 3
     r = client.post("/api/campaigns", json={"name": "c1", "geo": "US", "offer_id": 100})
     assert r.status_code == 400
     assert sum(c[0] == "create_campaign" for c in fake.calls) == 3
 
 
 def test_non_alias_error_is_not_retried(client: TestClient, fake: FakeKeitaro) -> None:
-    fake.create_campaign_failures = [HTTPException(400, "name is required")]
+    fake.create_campaign_failures = [UpstreamError("name is required", 400)]
     r = client.post("/api/campaigns", json={"name": "c1", "geo": "US", "offer_id": 100})
     assert r.status_code == 400
     assert sum(c[0] == "create_campaign" for c in fake.calls) == 1
@@ -182,7 +182,7 @@ def test_non_alias_error_is_not_retried(client: TestClient, fake: FakeKeitaro) -
 def test_stream_failure_deletes_the_campaign(
     client: TestClient, fake: FakeKeitaro
 ) -> None:
-    fake.create_stream_failures = [HTTPException(502, "boom")]
+    fake.create_stream_failures = [UpstreamError("boom", 502)]
     r = client.post("/api/campaigns", json={"name": "c1", "geo": "US", "offer_id": 100})
     assert r.status_code == 502
     assert fake.deleted_campaigns == [1000]
@@ -191,8 +191,8 @@ def test_stream_failure_deletes_the_campaign(
 def test_cleanup_failure_keeps_the_original_error(
     client: TestClient, fake: FakeKeitaro, caplog: pytest.LogCaptureFixture
 ) -> None:
-    fake.create_stream_failures = [HTTPException(502, "boom")]
-    fake.delete_campaign_failures = [HTTPException(404, "gone")]
+    fake.create_stream_failures = [UpstreamError("boom", 502)]
+    fake.delete_campaign_failures = [UpstreamError("gone", 404)]
     with caplog.at_level(logging.WARNING, logger="app.routers.creator"):
         r = client.post(
             "/api/campaigns", json={"name": "c1", "geo": "US", "offer_id": 100}
@@ -245,7 +245,7 @@ def test_create_compensates_on_db_failure(
     from app.db import get_db
     from app.main import app as fastapi_app
 
-    fake.delete_campaign_failures.append(HTTPException(404, "gone"))
+    fake.delete_campaign_failures.append(UpstreamError("gone", 404))
     fastapi_app.dependency_overrides[get_db] = override_db
     try:
         r = client.post(
