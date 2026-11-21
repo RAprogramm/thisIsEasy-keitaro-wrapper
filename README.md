@@ -42,6 +42,7 @@ cd thisIsEasy-keitaro-wrapper
 cp .env.example .env        # put your KEITARO_API_KEY in it
 make setup                  # dependencies + local databases + migrations
 make run                    # http://localhost:8000
+make stop                   # stop the app on :8000
 ```
 
 **Verify the code quality** (needs uv and PostgreSQL, works after `make setup`):
@@ -219,6 +220,7 @@ non-root user and reports health through `/healthz`.
 ```bash
 make setup           # dependencies + local databases + migrations
 make run             # run the app locally
+make stop            # stop the app on :8000
 make test            # pytest with coverage, must stay at 100%
 make lint            # ruff + mypy + yamllint + deptry + typos
 make verify          # lint + test in one command

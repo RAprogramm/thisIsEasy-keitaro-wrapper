@@ -1,10 +1,14 @@
-.PHONY: run demo demo-stop demo-reset setup test lint verify migrate requirements audit
+.PHONY: run stop demo demo-stop demo-reset setup test lint verify migrate requirements audit
 
+APP_PORT := 8000
 MOCK_PORT := 9001
 DEMO_PORT := 8001
 
 run:
 	uv run python -m app
+
+stop:
+	-fuser -k $(APP_PORT)/tcp 2>/dev/null || true
 
 demo:
 	@curl -sf http://127.0.0.1:$(MOCK_PORT)/openapi.json > /dev/null || \
