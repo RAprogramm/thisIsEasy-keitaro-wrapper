@@ -50,6 +50,19 @@ make run                    # http://localhost:8000
 make verify                 # all linters + tests with a 100% coverage gate
 ```
 
+**C — demo stand with mock data** (no real Keitaro account needed):
+
+```bash
+make demo                   # bundled Keitaro mock (:9001) + wrapper at http://localhost:8001
+make demo-reset             # reseed the mock and clear demo tracking (between takes)
+make demo-stop              # stop both
+```
+
+The mock (`scripts/mock_keitaro.py`) serves a demo campaign with a redirect
+stream and three offers, so adding, removing, shares and push can be exercised
+end to end without a real Keitaro. `make run` always uses the real Keitaro
+from `.env`.
+
 Without uv: `pip install -r requirements.txt` (pinned runtime dependencies) and run the
 same commands without the `uv run` prefix.
 
