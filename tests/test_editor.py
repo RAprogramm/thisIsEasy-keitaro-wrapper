@@ -230,6 +230,67 @@ def test_remove_last_offer_stages_removal(
     assert back["share"] == 100
 
 
+def test_restore_after_removal_clears_the_stream(
+    client: TestClient, fake: FakeKeitaro
+) -> None:
+    seed_campaign(fake)
+    set_stream_offers(
+        fake,
+        [
+            {"offer_id": 100, "share": 34, "state": "active"},
+            {"offer_id": 200, "share": 33, "state": "active"},
+            {"offer_id": 300, "share": 33, "state": "active"},
+        ],
+    )
+    client.get("/api/campaigns/1000")
+    client.delete("/api/campaigns/1000/offers/300?stream_id=2")
+    body = client.post("/api/campaigns/1000/offers/300/restore?stream_id=2").json()
+    assert shares_of(body) == {100: 34, 200: 33, 300: 33}
+    assert body["streams"][1]["dirty"] is False
+
+
+def test_restore_with_other_removal_staged_rebalances(
+    client: TestClient, fake: FakeKeitaro
+) -> None:
+    seed_campaign(fake)
+    set_stream_offers(
+        fake,
+        [
+            {"offer_id": 100, "share": 34, "state": "active"},
+            {"offer_id": 200, "share": 33, "state": "active"},
+            {"offer_id": 300, "share": 33, "state": "active"},
+        ],
+    )
+    client.get("/api/campaigns/1000")
+    client.delete("/api/campaigns/1000/offers/300?stream_id=2")
+    client.delete("/api/campaigns/1000/offers/200?stream_id=2")
+    body = client.post("/api/campaigns/1000/offers/300/restore?stream_id=2").json()
+    active = [o for o in body["streams"][1]["offers"] if o["status"] != "removed"]
+    assert sum(o["share"] for o in active) == 100
+    assert body["streams"][1]["dirty"] is True
+
+
+def test_unpin_restores_the_published_split(
+    client: TestClient, fake: FakeKeitaro
+) -> None:
+    seed_campaign(fake)
+    set_stream_offers(
+        fake,
+        [
+            {"offer_id": 100, "share": 34, "state": "active"},
+            {"offer_id": 200, "share": 33, "state": "active"},
+            {"offer_id": 300, "share": 33, "state": "active"},
+        ],
+    )
+    client.get("/api/campaigns/1000")
+    client.post("/api/campaigns/1000/offers/100/pin?stream_id=2&pinned=true")
+    body = client.post(
+        "/api/campaigns/1000/offers/100/pin?stream_id=2&pinned=false"
+    ).json()
+    assert shares_of(body) == {100: 34, 200: 33, 300: 33}
+    assert body["streams"][1]["dirty"] is False
+
+
 def test_remove_unknown_offer(client: TestClient, fake: FakeKeitaro) -> None:
     seed_campaign(fake)
     r = client.delete("/api/campaigns/1000/offers/200")
@@ -328,9 +389,10 @@ def test_restore_undoes_staged_removal(client: TestClient, fake: FakeKeitaro) ->
     body = client.post("/api/campaigns/1000/offers/200/restore?stream_id=2").json()
     target = next(o for o in body["streams"][1]["offers"] if o["offer_id"] == 200)
     assert target["status"] == "active"
-    assert target["share"] > 0
+    assert target["share"] == 0
     active = [o for o in body["streams"][1]["offers"] if o["status"] != "removed"]
     assert sum(o["share"] for o in active) == 100
+    assert body["streams"][1]["dirty"] is False
 
 
 def test_row_order_stable_across_pin(client: TestClient, fake: FakeKeitaro) -> None:

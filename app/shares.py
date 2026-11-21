@@ -122,6 +122,31 @@ def stream_payload(offers: list[StreamOffer]) -> dict[str, Any]:
     }
 
 
+def settle(offers: list[StreamOffer]) -> None:
+    """Undo rebalancing noise once the stream matches its published state.
+
+    Removing and restoring an offer (or pinning and unpinning) leaves shares
+    equally split, which can differ from the exact shares Keitaro already
+    has. When nothing is staged any more, shares snap back to the published
+    values so the stream stops claiming to be dirty; while changes are
+    staged, a rebalance keeps the active shares publishable.
+
+    Args:
+        offers: All tracked offers of the stream after an undone change.
+    """
+    if all(
+        o.status == OfferStatus.ACTIVE and o.pinned == o.published_pinned
+        for o in offers
+    ) and active_share_total(offers) == sum(o.published_share for o in offers):
+        for o in offers:
+            o.share = o.published_share
+        return
+    if any(o.status != OfferStatus.ACTIVE for o in offers) or (
+        active_share_total(offers) != 100
+    ):
+        rebalance(offers)
+
+
 def is_dirty(offers: list[StreamOffer]) -> bool:
     """True when local state differs from what was last published to Keitaro."""
     return any(

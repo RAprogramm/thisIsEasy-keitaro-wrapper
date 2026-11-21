@@ -21,6 +21,7 @@ from ..shares import (
     ensure_shares_publishable,
     is_dirty,
     rebalance,
+    settle,
     stream_payload,
 )
 from ..sync import local_offers, offer_stream, resolve_offer_stream, sync_stream
@@ -154,15 +155,23 @@ async def restore_offer(
 
     Undoing a staged removal returns the offer to whatever it was before:
     published offers become active again, never-published ones go back to
-    being a staged addition.
+    being a staged addition. When the removal was the only staged change the
+    stream ends up clean, exactly as published in Keitaro.
     """
     _, rows = await resolve_offer_stream(db, k, campaign_id, stream_id)
     target = require_offer(rows, offer_id)
     if target.status == OfferStatus.PENDING_REMOVE:
-        target.status = (
-            OfferStatus.ACTIVE if target.ever_published else OfferStatus.PENDING_ADD
-        )
-        rebalance(rows)
+        if target.ever_published:
+            target.status = OfferStatus.ACTIVE
+            target.share = target.published_share
+            target.pinned = target.published_pinned
+            for r in rows:
+                if r.status == OfferStatus.ACTIVE and r.pinned == r.published_pinned:
+                    r.share = r.published_share
+            settle(rows)
+        else:
+            target.status = OfferStatus.PENDING_ADD
+            rebalance(rows)
         await unlog_change(db, campaign_id, offer_id, "remove")
         await db.commit()
         logger.info(
@@ -197,7 +206,7 @@ async def pin_offer(
         raise HTTPException(404, "Оффер не найден в потоке")
     ensure_pin_allowed(rows, target, pinned)
     target.pinned = pinned
-    rebalance(rows)
+    settle(rows)
     await db.commit()
     logger.info(
         "pinned state changed for offer %s in campaign %s", offer_id, campaign_id
