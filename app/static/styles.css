@@ -1911,59 +1911,6 @@
       transform: none;
     }
   }
-
-  .dialog {
-    width: min(420px, calc(100vw - 32px));
-    max-width: none;
-    margin: auto;
-    padding: 0;
-    border: 0;
-    background: transparent;
-    color: var(--ink);
-  }
-
-  .dialog::backdrop {
-    background: oklch(0.15 0.01 265 / 0.5);
-    backdrop-filter: blur(3px);
-  }
-
-  .dialog__body {
-    padding: 24px;
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-lg);
-  }
-
-  .dialog__icon {
-    width: 40px;
-    height: 40px;
-    border-radius: 12px;
-    display: grid;
-    place-items: center;
-    margin-bottom: 14px;
-    background: var(--warning-soft);
-    color: var(--warning);
-  }
-
-  .dialog__title {
-    font-size: 17px;
-    font-weight: 650;
-  }
-
-  .dialog__text {
-    margin-top: 6px;
-    font-size: 13.5px;
-    line-height: 1.55;
-    color: var(--muted);
-  }
-
-  .dialog__actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 8px;
-    margin-top: 22px;
-  }
 }
 
 @layer components {

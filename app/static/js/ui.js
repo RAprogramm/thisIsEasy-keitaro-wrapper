@@ -51,16 +51,3 @@ export function fill(select, items, withEmpty) {
   if (withEmpty) select.append(new Option('— не выбрано —', ''));
   for (const item of items) select.append(new Option(item.name, item.id));
 }
-
-export function confirmAction({ title, text, confirmLabel, danger = false }) {
-  const dialog = $('confirm-dialog');
-  $('confirm-title').textContent = title;
-  $('confirm-text').textContent = text;
-  const ok = $('confirm-ok');
-  ok.textContent = confirmLabel;
-  ok.className = danger ? 'btn btn--danger-solid' : 'btn btn--primary';
-  dialog.showModal();
-  return new Promise((resolve) => {
-    dialog.addEventListener('close', () => resolve(dialog.returnValue === 'confirm'), { once: true });
-  });
-}

@@ -1,4 +1,4 @@
-import { $, show, toast, setStatus, fill, confirmAction, setBusy } from './ui.js';
+import { $, show, toast, setStatus, fill, setBusy } from './ui.js';
 import { initActivity, logAction, logEvent } from './activity.js';
 import { api } from './api.js';
 import { state } from './state.js';
@@ -299,15 +299,6 @@ async function runAction(button, action, okText, kind, onError) {
 
 async function changeOffer(method, button, offerId, streamId) {
   if (!offerId) return;
-  if (method === 'DELETE') {
-    const confirmed = await confirmAction({
-      title: 'Убрать оффер из потока?',
-      text: `Оффер #${offerId} получит долю 0% и уйдёт в архив обёртки. В Keitaro изменение применится после публикации потока.`,
-      confirmLabel: 'Убрать оффер',
-      danger: true,
-    });
-    if (!confirmed) return;
-  }
   const campaignId = state.currentCampaign.id;
   const call = method === 'POST'
     ? () => api(`/api/campaigns/${campaignId}/offers`, {
@@ -349,12 +340,6 @@ function pushStream(button, streamId) {
 }
 
 async function cancelStream(button, streamId) {
-  const confirmed = await confirmAction({
-    title: 'Отменить изменения?',
-    text: 'Все неопубликованные изменения этого потока будут отброшены. Поток вернётся к состоянию Keitaro.',
-    confirmLabel: 'Отменить изменения',
-  });
-  if (!confirmed) return;
   const campaignId = state.currentCampaign.id;
   logAction(`Отмена изменений потока #${streamId}`);
   return runAction(
