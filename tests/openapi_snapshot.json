@@ -1048,7 +1048,7 @@
     },
     "/api/campaigns/{campaign_id}/offers/{offer_id}/restore": {
       "post": {
-        "description": "Bring an archived offer back into the stream as a staged addition.",
+        "description": "Bring an archived offer back; a staged removal is simply undone.",
         "operationId": "restore_offer_api_campaigns__campaign_id__offers__offer_id__restore_post",
         "parameters": [
           {

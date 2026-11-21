@@ -169,10 +169,12 @@ async def local_offers(
 ) -> list[StreamOffer]:
     """All locally tracked offers of one stream."""
     result = await db.execute(
-        select(StreamOffer).where(
+        select(StreamOffer)
+        .where(
             StreamOffer.keitaro_campaign_id == campaign_id,
             StreamOffer.stream_id == stream_id,
         )
+        .order_by(StreamOffer.id)
     )
     return list(result.scalars().all())
 

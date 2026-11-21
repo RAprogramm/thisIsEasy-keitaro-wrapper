@@ -1,12 +1,7 @@
 const HTML_ENTITIES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
-const numberFormat = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 });
 
 export function esc(value) {
   return String(value ?? '').replace(/[&<>"']/g, (char) => HTML_ENTITIES[char]);
-}
-
-export function fmtNumber(value) {
-  return numberFormat.format(Number(value) || 0);
 }
 
 export function plural(count, forms) {

@@ -2,7 +2,7 @@ import { $, show, toast, setStatus, fill, confirmAction, setBusy } from './ui.js
 import { initActivity, logAction, logEvent } from './activity.js';
 import { api } from './api.js';
 import { state } from './state.js';
-import { esc, fmtNumber, plural } from './format.js';
+import { esc, plural } from './format.js';
 
 const COMBO_DEBOUNCE_MS = 150;
 const COMBO_LIMIT = 20;
@@ -132,20 +132,17 @@ function offerBadge(offer) {
 }
 
 function offerRow(stream, offer) {
-  const stats = offer.stats || {};
   const removed = offer.status === 'removed';
   const staged = removed || offer.status === 'pending_remove';
   const share = Math.max(0, Math.min(100, Number(offer.share) || 0));
   const pinLabel = `${offer.pinned ? 'Открепить' : 'Закрепить'} долю оффера ${offer.name}`;
-  const action = removed
+  const action = staged
     ? `<button class="btn btn--success btn--sm" data-restore="${offer.offer_id}" data-stream="${stream.id}">
          <svg class="icon" aria-hidden="true"><use href="#i-undo"/></svg><span>Вернуть</span>
        </button>`
-    : staged
-      ? ''
-      : `<button class="btn btn--danger btn--sm" data-del="${offer.offer_id}" data-stream="${stream.id}">
-           <svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg><span>Убрать</span>
-         </button>`;
+    : `<button class="btn btn--danger btn--sm" data-del="${offer.offer_id}" data-stream="${stream.id}">
+         <svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg><span>Убрать</span>
+       </button>`;
   return `<tr class="${removed ? 'is-removed' : ''}">
     <td class="offer-cell" data-label="Оффер">
       <div class="offer-cell__main">
@@ -167,12 +164,6 @@ function offerRow(stream, offer) {
         <span class="switch__track" aria-hidden="true"></span>
       </label>
     </td>
-    <td class="num" data-label="Клики">${fmtNumber(stats.clicks)}</td>
-    <td class="num" data-label="Уники">${fmtNumber(stats.unique_clicks)}</td>
-    <td class="num" data-label="Конверсии">${fmtNumber(stats.conversions)}</td>
-    <td class="num" data-label="Доход">${fmtNumber(stats.revenue)}</td>
-    <td class="num" data-label="Расход">${fmtNumber(stats.cost)}</td>
-    <td class="num" data-label="Профит">${fmtNumber(stats.profit)}</td>
     <td class="actions" data-label="">${action}</td>
   </tr>`;
 }
@@ -235,12 +226,6 @@ function renderStream(stream) {
           <th scope="col">Оффер</th>
           <th scope="col" class="num">Доля</th>
           <th scope="col" class="center">Закрепление</th>
-          <th scope="col" class="num">Клики</th>
-          <th scope="col" class="num">Уники</th>
-          <th scope="col" class="num">Конверсии</th>
-          <th scope="col" class="num">Доход</th>
-          <th scope="col" class="num">Расход</th>
-          <th scope="col" class="num">Профит</th>
           <th scope="col"><span class="sr-only">Действия</span></th>
         </tr></thead>
         <tbody>${stream.offers.map((offer) => offerRow(stream, offer)).join('')}</tbody>
@@ -290,9 +275,6 @@ function campaignHead(campaign) {
 function render() {
   const campaign = state.currentCampaign;
   let html = campaignHead(campaign);
-  if (campaign.stats_error) {
-    html += `<div class="msg err">Статистика загрузилась не полностью: ${esc(campaign.stats_error)}</div>`;
-  }
   html += campaign.streams.map(renderStream).join('');
   $('e-body').innerHTML = html;
   wireStreamActions();

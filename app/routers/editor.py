@@ -155,10 +155,21 @@ async def restore_offer(
     k: Tracker,
     stream_id: int | None = None,
 ) -> CampaignView:
-    """Bring an archived offer back into the stream as a staged addition."""
+    """Bring an archived offer back; a staged removal is simply undone."""
     _, rows = await resolve_offer_stream(db, k, campaign_id, stream_id)
     target = next((r for r in rows if r.offer_id == offer_id), None)
-    if target is None or target.status != OfferStatus.REMOVED:
+    if target is None:
+        raise HTTPException(404, "Оффер не найден в потоке")
+    if target.status == OfferStatus.PENDING_REMOVE:
+        target.status = OfferStatus.ACTIVE
+        rebalance(rows)
+        await unlog_change(db, campaign_id, offer_id, "remove")
+        await db.commit()
+        logger.info(
+            "undid staged removal of offer %s in campaign %s", offer_id, campaign_id
+        )
+        return await build_campaign_view(campaign_id, k, db)
+    if target.status != OfferStatus.REMOVED:
         raise HTTPException(404, "Оффер не в архиве")
     target.status = OfferStatus.PENDING_ADD
     target.share = 0
