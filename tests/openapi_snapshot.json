@@ -130,6 +130,11 @@
       "CampaignView": {
         "description": "Full campaign payload returned by the editor.",
         "properties": {
+          "alias": {
+            "default": "",
+            "title": "Alias",
+            "type": "string"
+          },
           "id": {
             "title": "Id",
             "type": "integer"

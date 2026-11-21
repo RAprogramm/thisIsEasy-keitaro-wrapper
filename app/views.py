@@ -97,6 +97,7 @@ async def build_campaign_view(
     return CampaignView(
         id=campaign["id"],
         name=campaign["name"],
+        alias=str(campaign.get("alias", "")),
         streams=result_streams,
         stats_error=stats_error,
         keitaro_url=settings.keitaro_url,

@@ -13,7 +13,7 @@ from tests.conftest import FakeKeitaro, make_offer_stream
 
 
 def seed_campaign(fake: FakeKeitaro, cid: int = 1000) -> None:
-    fake.campaigns[cid] = {"id": cid, "name": "camp"}
+    fake.campaigns[cid] = {"id": cid, "name": "camp", "alias": f"camp-{cid}"}
     fake.streams[cid] = [
         {"id": 1, "name": "Geo", "schema": "redirect", "offers": []},
         make_offer_stream(2, [{"offer_id": 100, "share": 100, "state": "active"}]),
@@ -228,6 +228,23 @@ def test_remove_last_offer_stages_removal(
     back = next(o for o in restored["streams"][1]["offers"] if o["offer_id"] == 100)
     assert back["status"] == "active"
     assert back["share"] == 100
+
+
+def test_campaign_payload_carries_the_alias_for_deep_links(
+    client: TestClient, fake: FakeKeitaro
+) -> None:
+    seed_campaign(fake)
+    body = client.get("/api/campaigns/1000").json()
+    assert body["alias"] == "camp-1000"
+
+
+def test_campaign_without_alias_falls_back_to_empty(
+    client: TestClient, fake: FakeKeitaro
+) -> None:
+    seed_campaign(fake)
+    del fake.campaigns[1000]["alias"]
+    body = client.get("/api/campaigns/1000").json()
+    assert body["alias"] == ""
 
 
 def test_restore_after_removal_clears_the_stream(

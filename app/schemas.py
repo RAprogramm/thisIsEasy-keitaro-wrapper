@@ -117,6 +117,7 @@ class CampaignView(BaseModel):
 
     id: int
     name: str
+    alias: str = ""
     streams: list[StreamView]
     stats_error: str | None = None
     keitaro_url: str = ""

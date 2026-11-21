@@ -543,7 +543,8 @@ $('create-form').onsubmit = async (event) => {
 $('e-load').onclick = () => loadCampaign(selectedCampaignId());
 $('e-open').onclick = () => {
   if (state.currentCampaign) {
-    window.open(`${state.currentCampaign.keitaro_url}/admin/#!/campaigns/${state.currentCampaign.id}/edit`, '_blank');
+    const c = state.currentCampaign;
+    window.open(`${c.keitaro_url}/admin/#!/campaigns/${c.alias || c.id}/edit`, '_blank');
   }
 };
 $('e-offers').onclick = () => {

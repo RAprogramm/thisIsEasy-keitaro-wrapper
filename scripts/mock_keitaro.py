@@ -33,6 +33,7 @@ DB: dict[str, Any] = {
         900001: {
             "id": 900001,
             "name": "demo_video_campaign",
+            "alias": "demo-video-campaign",
             "type": "rotor",
             "state": "active",
             "domain_id": 1,
@@ -185,6 +186,7 @@ async def create_campaign(request: Request) -> Any:
     campaign = {
         "id": cid,
         "name": body.get("name", f"campaign {cid}"),
+        "alias": body.get("alias", f"campaign-{cid}"),
         "type": body.get("type", "rotor"),
         "state": "active",
         "domain_id": body.get("domain_id", 1),
