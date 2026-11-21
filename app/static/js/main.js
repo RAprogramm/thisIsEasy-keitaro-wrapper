@@ -44,24 +44,6 @@ async function init() {
     },
     'Ищу офферы…',
   );
-  loadRecent();
-}
-
-async function loadRecent() {
-  try {
-    const rows = await api('/api/campaigns');
-    const select = $('e-recent');
-    select.innerHTML = '';
-    select.append(new Option('— выберите кампанию —', ''));
-    if (!rows.length) {
-      const empty = new Option('Кампаний пока нет', '');
-      empty.disabled = true;
-      select.append(empty);
-    }
-    for (const row of rows) select.append(new Option(`${row.name} (#${row.id})`, row.id));
-  } catch (error) {
-    logEvent('warn', `Не удалось загрузить недавние кампании: ${error.message}`);
-  }
 }
 
 function campaignSkeleton() {
@@ -664,7 +646,6 @@ $('create-form').onsubmit = async (event) => {
     setStatus(`Кампания #${campaign.id} «${campaign.name}» создана`, 'ok');
     $('e-id').value = campaign.id;
     $('e-id').dataset.selectedId = String(campaign.id);
-    loadRecent();
   } catch (error) {
     show($('c-msg'), error.message, false);
     toast(error.message, false);
@@ -694,12 +675,6 @@ $('e-from').onchange = () => {
 };
 $('e-to').onchange = () => {
   if (state.currentCampaign) loadCampaign(String(state.currentCampaign.id));
-};
-$('e-recent').onchange = (event) => {
-  if (!event.target.value) return;
-  $('e-id').value = event.target.value;
-  $('e-id').dataset.selectedId = event.target.value;
-  loadCampaign(event.target.value);
 };
 
 makeCombo(
