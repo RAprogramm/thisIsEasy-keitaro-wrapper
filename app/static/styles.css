@@ -476,6 +476,7 @@
 
   .date-range input {
     min-width: 0;
+    padding-inline: 8px;
   }
 
   .date-range__sep {
@@ -752,6 +753,7 @@
 @layer components {
   .campaign {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: 20px;
   }
 
@@ -823,6 +825,7 @@
 
   .stream {
     position: relative;
+    min-width: 0;
   }
 
   .stream > :last-child {
@@ -977,7 +980,7 @@
 
   .table {
     width: 100%;
-    min-width: 1040px;
+    min-width: 760px;
     border-collapse: separate;
     border-spacing: 0;
   }
@@ -1293,6 +1296,10 @@
     .field--span-4,
     .field--span-5 {
       grid-column: span 6;
+    }
+
+    .field--dates {
+      grid-column: span 12;
     }
   }
 
